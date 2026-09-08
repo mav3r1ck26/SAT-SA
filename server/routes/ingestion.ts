@@ -1,4 +1,4 @@
-import { Router } from 'express'
+import { Router, Response } from 'express'
 import multer from 'multer'
 import fs from 'fs'
 import path from 'path'
@@ -15,26 +15,26 @@ const upload = multer({ storage: multer.diskStorage({ destination: uploadDir, fi
 
 const router = Router()
 
+function handleError(err: unknown, res: Response) {
+  const message = err instanceof Error ? err.message : 'Unknown error'
+  res.status(500).json({ success: false, error: { code: 'INTERNAL_ERROR', message } })
+}
+
 // Get current data quality summary
 router.get('/quality', async (req, res) => {
   try {
     const recent = await IngestionBatch.find().sort({ createdAt: -1 }).limit(5).lean()
     const totalAlerts = await Alert.countDocuments()
     const totalCases = await Case.countDocuments()
-    res.json({
-      batches: recent,
-      totals: { alerts: totalAlerts, cases: totalCases }
-    })
-  } catch (err) {
-    res.status(500).json({ error: err.message })
-  }
+    res.json({ success: true, data: { batches: recent, totals: { alerts: totalAlerts, cases: totalCases } } })
+  } catch (err) { handleError(err, res) }
 })
 
 // Upload & validate a data file (CSV/JSON)
 router.post('/upload', upload.single('file'), async (req, res) => {
   try {
     const file = req.file
-    if (!file) return res.status(400).json({ error: 'No file uploaded' })
+    if (!file) return res.status(400).json({ success: false, error: { code: 'BAD_REQUEST', message: 'No file uploaded' } })
 
     const content = fs.readFileSync(file.path, 'utf8')
     const source = req.body.source || 'file'
@@ -47,30 +47,26 @@ router.post('/upload', upload.single('file'), async (req, res) => {
     } else if (ext === '.csv') {
       records = parseCSV(content)
     } else {
-      return res.status(400).json({ error: 'Unsupported file type. Use CSV or JSON.' })
+      return res.status(400).json({ success: false, error: { code: 'BAD_REQUEST', message: 'Unsupported file type. Use CSV or JSON.' } })
     }
 
     // Validate & ingest
     const validation = validateRecords(records)
     const result = await persistValidated(records, validation.valid, source, file.originalname)
 
-    res.json(result)
-  } catch (err) {
-    res.status(500).json({ error: err.message })
-  }
+    res.json({ success: true, data: result })
+  } catch (err) { handleError(err, res) }
 })
 
 // Ingest from API (JSON payload)
 router.post('/api', async (req, res) => {
   try {
     const records = req.body.records || req.body
-    if (!Array.isArray(records)) return res.status(400).json({ error: 'Records must be an array' })
+    if (!Array.isArray(records)) return res.status(400).json({ success: false, error: { code: 'BAD_REQUEST', message: 'Records must be an array' } })
     const validation = validateRecords(records)
     const result = await persistValidated(records, validation.valid, 'API', null)
-    res.json(result)
-  } catch (err) {
-    res.status(500).json({ error: err.message })
-  }
+    res.json({ success: true, data: result })
+  } catch (err) { handleError(err, res) }
 })
 
 // ---- Helpers ----

@@ -2,260 +2,410 @@ import pandas as pd
 import numpy as np
 from datetime import datetime
 from typing import List, Dict, Any
+import sys
+import os
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-try:
-    from .models import EnsembleDetector
-except ImportError:
-    from models import EnsembleDetector
+from features import EFFICIENCY_TARGETS
 
-def clean_nan(obj):
-    """Recursively replace NaN/None with empty string for JSON serialization"""
-    if isinstance(obj, float) and (np.isnan(obj) or np.isinf(obj)):
-        return ""
-    if obj is None:
-        return ""
-    if isinstance(obj, dict):
-        return {k: clean_nan(v) for k, v in obj.items()}
-    if isinstance(obj, list):
-        return [clean_nan(v) for v in obj]
-    if isinstance(obj, pd.Timestamp):
-        return str(obj) if not pd.isna(obj) else ""
-    if hasattr(obj, '__class__') and 'NaT' in obj.__class__.__name__:
-        return ""
-    return obj
-
-PLAYBOOKS = {
-    'brute_force': {
-        'name': 'Brute Force Detection Playbook',
-        'trigger': 'Multiple failed authentication attempts from same source',
-        'iocs': ['failed_login_count > 10', 'single_source_ip', 'short_time_window'],
-        'services': ['SSH', 'RDP', 'VPN', 'Web Authentication', 'Database Auth']
+# ────────────────────────────────────────────────────────────────
+# EFFICIENCY INTERPRETATIONS
+# ────────────────────────────────────────────────────────────────
+EFFICIENCY_INTERPRETATIONS = {
+    'false_positive_rate': {
+        'thresholds': [(0.05, 'Excellent'), (0.15, 'Good'), (0.30, 'Needs Improvement'), (1.0, 'Critical')],
+        'unit': '%',
+        'direction': 'lower_better'
     },
-    'port_scan': {
-        'name': 'Port Scanning Detection Playbook',
-        'trigger': 'Connection attempts to multiple ports from single source',
-        'iocs': ['multiple_dest_ports', 'syn_flag_only', 'low_packet_per_connection'],
-        'services': ['Network Infrastructure', 'Firewall', 'IDS/IPS']
+    'incorrect_classification_ratio': {
+        'thresholds': [(0.05, 'Excellent'), (0.10, 'Good'), (0.20, 'Needs Improvement'), (1.0, 'Critical')],
+        'unit': '%',
+        'direction': 'lower_better'
     },
-    'malware_c2': {
-        'name': 'Malware C2 Communication Playbook',
-        'trigger': 'Beaconing pattern to known/suspicious C2 infrastructure',
-        'iocs': ['regular_intervals', 'suspicious_domain', 'known_malware_hash', 'dga_domain'],
-        'services': ['Endpoint', 'Proxy', 'DNS', 'Firewall']
+    'analyst_efficiency': {
+        'thresholds': [(3.0, 'Excellent'), (2.0, 'Good'), (1.0, 'Needs Improvement'), (0.0, 'Critical')],
+        'unit': 'cases/hr',
+        'direction': 'higher_better'
     },
-    'data_exfil': {
-        'name': 'Data Exfiltration Playbook',
-        'trigger': 'Unusual large data transfer to external destination',
-        'iocs': ['high_byte_ratio', 'unusual_dest_ip', 'off_hours_transfer', 'compressed_encrypted'],
-        'services': ['File Server', 'Database', 'Cloud Storage', 'Email', 'Web Proxy']
+    'insufficient_evidence_ratio': {
+        'thresholds': [(0.05, 'Excellent'), (0.15, 'Good'), (0.30, 'Needs Improvement'), (1.0, 'Critical')],
+        'unit': '%',
+        'direction': 'lower_better'
     },
-    'privilege_esc': {
-        'name': 'Privilege Escalation Playbook',
-        'trigger': 'Successful admin access after failed attempts or unusual elevation',
-        'iocs': ['sudo_su_success', 'token_manipulation', 'bypass_uac', 'golden_ticket'],
-        'services': ['Active Directory', 'Linux Sudo', 'Windows UAC', 'IAM']
+    'signature_age_days': {
+        'thresholds': [(30, 'Excellent'), (90, 'Good'), (180, 'Needs Improvement'), (9999, 'Critical')],
+        'unit': 'days',
+        'direction': 'lower_better'
     },
-    'lateral_movement': {
-        'name': 'Lateral Movement Playbook',
-        'trigger': 'Authentication from compromised host to other internal systems',
-        'iocs': ['pass_the_hash', 'pass_the_ticket', 'psexec', 'wmi', 'smb_admin_shares'],
-        'services': ['SMB', 'RPC', 'WMI', 'WinRM', 'SSH']
-    },
-    'web_attack': {
-        'name': 'Web Application Attack Playbook',
-        'trigger': 'SQLi, XSS, RCE, or path traversal attempts detected',
-        'iocs': ['sql_keywords', 'script_tags', 'path_traversal', 'cmd_injection', 'xxe_payload'],
-        'services': ['Web Application', 'WAF', 'API Gateway', 'Database']
-    },
-    'insider_threat': {
-        'name': 'Insider Threat Playbook',
-        'trigger': 'Authorized user accessing unusual resources or large data downloads',
-        'iocs': ['off_hours_access', 'unusual_resource_access', 'bulk_download', 'privilege_abuse'],
-        'services': ['File Server', 'Database', 'CRM', 'ERP', 'Source Control']
+    'playbook_gap_ratio': {
+        'thresholds': [(0.10, 'Excellent'), (0.30, 'Good'), (0.50, 'Needs Improvement'), (1.0, 'Critical')],
+        'unit': '%',
+        'direction': 'lower_better'
     }
 }
 
-RULE_MAPPING = {
-    'failed_login': ('brute_force', 'Multiple failed login attempts', 'Authentication Service'),
-    'port_scan': ('port_scan', 'Port scanning activity detected', 'Network Infrastructure'),
-    'beaconing': ('malware_c2', 'C2 beaconing pattern detected', 'Endpoint/Network'),
-    'large_transfer': ('data_exfil', 'Large data transfer to external IP', 'File/Database Server'),
-    'priv_esc': ('privilege_esc', 'Privilege escalation attempt', 'Identity Management'),
-    'lateral': ('lateral_movement', 'Lateral movement detected', 'Internal Services'),
-    'web_attack': ('web_attack', 'Web application attack detected', 'Web Application'),
-    'insider': ('insider_threat', 'Insider threat indicator', 'Business Applications')
+TARGET_LABELS = {
+    'false_positive_rate': 'False Positive Rate',
+    'incorrect_classification_ratio': 'Incorrect Classification Ratio',
+    'analyst_efficiency': 'Analyst Efficiency',
+    'insufficient_evidence_ratio': 'Insufficient Evidence Ratio',
+    'signature_age_days': 'Signature Age',
+    'playbook_gap_ratio': 'Playbook Gap Ratio'
 }
 
-def generate_reasoning(row: pd.Series, ensemble_result: Dict) -> str:
-    reasons = []
-    
-    if ensemble_result['supervised_pred'] == 1:
-        reasons.append("Supervised model (Random Forest) classified as attack based on learned patterns")
-    else:
-        reasons.append("Supervised model (Random Forest) classified as normal based on learned patterns")
-    
-    if ensemble_result['unsupervised_pred'] == 1:
-        reasons.append(f"Unsupervised model (K-Means) clustered as attack (anomaly score: {ensemble_result['anomaly_score']:.3f})")
-    else:
-        reasons.append(f"Unsupervised model clustered as normal (anomaly score: {ensemble_result['anomaly_score']:.3f})")
-    
-    if row.get('keyword_match_count', 0) > 0:
-        reasons.append(f"Attack keywords detected in description ({int(row['keyword_match_count'])} matches)")
-    
-    if row.get('high_volume', 0) == 1:
-        reasons.append("Abnormally high data volume detected")
-    
-    if row.get('src_port_risk', 0) == 1 or row.get('dst_port_risk', 0) == 1:
-        reasons.append("Connection involves high-risk port")
-    
-    if row.get('protocol_risk', 0) == 1:
-        reasons.append("High-risk protocol detected")
-    
-    if row.get('suspicious_ua', 0) == 1:
-        reasons.append("Suspicious user agent detected")
-    
-    if row.get('error_status', 0) == 1:
-        reasons.append("HTTP error status codes observed")
-    
-    if row.get('src_ip_rare', 0) == 1:
-        reasons.append("Source IP is rare/low frequency")
-    
-    if row.get('is_night', 0) == 1:
-        reasons.append("Activity occurred during off-hours (22:00-05:00)")
-    
-    return " | ".join(reasons)
+IMPROVEMENT_RECOMMENDATIONS = {
+    'false_positive_rate': [
+        'Tune high-volume detection rules to reduce noise',
+        'Implement alert suppression for known benign patterns',
+        'Add context enrichment before alert generation'
+    ],
+    'incorrect_classification_ratio': [
+        'Review and update investigation templates',
+        'Implement mandatory peer review for high-severity cases',
+        'Add mandatory classification justification fields'
+    ],
+    'analyst_efficiency': [
+        'Automate routine triage with SOAR playbooks',
+        'Implement alert grouping and deduplication',
+        'Cross-train analysts for workload balancing'
+    ],
+    'insufficient_evidence_ratio': [
+        'Mandate minimum evidence standards for Critical/High cases',
+        'Implement automated evidence collection playbooks',
+        'Add evidence completeness check at case closure'
+    ],
+    'signature_age_days': [
+        'Establish signature review cycle (monthly for Critical, quarterly for others)',
+        'Automate signature currency monitoring',
+        'Integrate threat intel feeds for signature updates'
+    ],
+    'playbook_gap_ratio': [
+        'Prioritize playbook development for top 10 uncovered MITRE techniques',
+        'Implement playbook review cycle (quarterly)',
+        'Create playbook template for rapid development'
+    ]
+}
 
-def determine_escalation(row: pd.Series, ensemble_result: Dict) -> tuple:
-    confidence = ensemble_result['confidence']
-    classification = ensemble_result['classification']
+# ────────────────────────────────────────────────────────────────
+# RATING HELPERS
+# ────────────────────────────────────────────────────────────────
+def get_rating(target: str, value: float) -> str:
+    """Get qualitative rating for a metric value."""
+    config = EFFICIENCY_INTERPRETATIONS.get(target, {})
+    thresholds = config.get('thresholds', [])
+    direction = config.get('direction', 'lower_better')
     
-    if classification == 'Attack':
-        if confidence >= 0.85:
-            return ('Yes', 'High confidence attack detection - immediate escalation required')
-        elif confidence >= 0.7:
-            return ('Yes', 'Medium-high confidence - escalate for investigation')
-        elif confidence >= 0.55:
-            return ('Yes', 'Moderate confidence - recommend escalation and review')
-        else:
-            return ('Review', 'Low confidence - manual review recommended before escalation')
-    else:
-        if confidence <= 0.3:
-            return ('Review', 'Low confidence normal classification - verify with analyst')
-        return ('No', 'Classified as normal with sufficient confidence')
+    if direction == 'lower_better':
+        for threshold, rating in thresholds:
+            if value <= threshold:
+                return rating
+        return 'Critical'
+    else:  # higher_better
+        for threshold, rating in reversed(thresholds):
+            if value >= threshold:
+                return rating
+        return 'Critical'
 
-def determine_tp_fp(row: pd.Series, ensemble_result: Dict, ground_truth: int = None) -> str:
-    if ground_truth is not None:
-        pred = 1 if ensemble_result['classification'] == 'Attack' else 0
-        if pred == 1 and ground_truth == 1:
-            return 'TP'
-        elif pred == 1 and ground_truth == 0:
-            return 'FP'
-        elif pred == 0 and ground_truth == 1:
-            return 'FN'
-        else:
-            return 'TN'
-    return 'Unknown'
 
-def identify_triggered_playbook(row: pd.Series) -> List[str]:
-    triggered = []
-    desc = str(row.get('alert_description', '')).lower()
-    
-    if any(kw in desc for kw in ['failed login', 'brute force', 'password guess', 'authentication failure']):
-        triggered.append('brute_force')
-    if row.get('dst_port_risk', 0) == 1 and row.get('src_port_risk', 0) == 0:
-        triggered.append('port_scan')
-    if row.get('keyword_match_count', 0) > 0:
-        malware_kws = ['malware', 'trojan', 'c2', 'beacon', 'backdoor', 'rootkit', 'apt']
-        if any(kw in desc for kw in malware_kws):
-            triggered.append('malware_c2')
-    if row.get('high_volume', 0) == 1 and row.get('byte_ratio', 0) > 10:
-        triggered.append('data_exfil')
-    if any(kw in desc for kw in ['privilege escalation', 'sudo', 'uac bypass', 'token']):
-        triggered.append('privilege_esc')
-    if any(kw in desc for kw in ['lateral', 'psexec', 'wmi', 'pass the hash', 'smb']):
-        triggered.append('lateral_movement')
-    if any(kw in desc for kw in ['sql injection', 'xss', 'path traversal', 'rce', 'command injection']):
-        triggered.append('web_attack')
-    if row.get('src_ip_rare', 0) == 1 and row.get('high_volume', 0) == 1:
-        triggered.append('insider_threat')
-    
-    return triggered if triggered else ['brute_force']
+def get_confidence_label(confidence: float) -> str:
+    if confidence >= 0.9: return 'Very High'
+    if confidence >= 0.75: return 'High'
+    if confidence >= 0.6: return 'Medium'
+    return 'Low'
 
-def generate_file_a(df: pd.DataFrame, results: List[Dict], investigators: List[str] = None) -> pd.DataFrame:
-    if investigators is None:
-        investigators = [f'Analyst-{(i % 5) + 1:02d}' for i in range(len(df))]
-    
+
+def format_value(target: str, value: float) -> str:
+    """Format value with appropriate unit."""
+    config = EFFICIENCY_INTERPRETATIONS.get(target, {})
+    unit = config.get('unit', '')
+    if unit == '%':
+        return f"{value:.1%}"
+    elif unit == 'days':
+        return f"{value:.0f} days"
+    elif unit == 'cases/hr':
+        return f"{value:.1f} cases/hr"
+    return f"{value:.2f}"
+
+
+# ────────────────────────────────────────────────────────────────
+# FILE A: EFFICIENCY EVALUATION REPORT (for Examiners)
+# ────────────────────────────────────────────────────────────────
+def generate_file_a_efficiency(
+    entities_df: pd.DataFrame,
+    ml_predictions: List[Dict],
+    rule_findings: List[Dict]
+) -> pd.DataFrame:
+    """
+    Generate File A: SOC Efficiency Evaluation Report
+    For examiner review - contains efficiency scores, ratings, and findings.
+    """
     output_rows = []
-    for i, (_, row) in enumerate(df.iterrows()):
-        ensemble_result = results[i]
-        classification = ensemble_result['classification']
-        confidence = ensemble_result['confidence']
+    
+    for idx, entity_row in entities_df.iterrows():
+        entity_id = entity_row.get('entity_id', f'ENTITY-{idx}')
+        period = entity_row.get('period', 'Unknown')
         
-        escalation_needed, escalation_reason = determine_escalation(row, ensemble_result)
-        tp_fp = determine_tp_fp(row, ensemble_result, row.get('label'))
-        reasoning = generate_reasoning(row, ensemble_result)
+        # Get ML predictions for this entity (assuming ml_predictions aligned)
+        pred_idx = min(idx, len(ml_predictions) - 1)
+        ml_pred = ml_predictions[min(idx, len(ml_predictions) - 1)] if ml_predictions else {}
         
-        ticket_num = row.get('ticket_number', f'TKT-{datetime.now().strftime("%Y%m%d")}-{i+1:05d}')
-        if pd.isna(ticket_num) or ticket_num == '':
-            ticket_num = f'TKT-{datetime.now().strftime("%Y%m%d")}-{i+1:05d}'
+        # Get rule findings for this entity
+        entity_findings = [f for f in rule_findings if f.get('entity_id') == entity_row.get('entity_id', '')]
         
-        output_rows.append({
-            'Investigator': investigators[i] if i < len(investigators) else f'Analyst-{(i % 5) + 1:02d}',
-            'Ticket_Number': clean_nan(ticket_num),
-            'Potential_Attack_Classification': clean_nan(classification),
-            'TP_or_FP': clean_nan(tp_fp),
-            'Escalation_Needed': clean_nan(escalation_needed),
-            'Reasoning': clean_nan(reasoning)
-        })
+        # Build efficiency scores row
+        row = {
+            'Entity_ID': entity_row.get('entity_id', f'ENTITY-{idx}'),
+            'Period': period,
+            'Sector': entity_row.get('sector', 'Unknown'),
+            'Criticality': entity_row.get('criticality', 'Unknown'),
+            'Assessment_Date': datetime.now().strftime('%Y-%m-%d')
+        }
+        
+        # Add efficiency scores
+        for target in EFFICIENCY_TARGETS:
+            label = TARGET_LABELS.get(target, target)
+            # Extract from ML predictions
+            pred_val = 0
+            confidence = 0
+            interpretation = ""
+            
+            # Try to get from ml_predictions structure
+            if isinstance(ml_predictions, list) and pred_idx < len(ml_predictions):
+                pred = ml_predictions[pred_idx]
+                if isinstance(pred, dict) and target in pred:
+                    pred_data = pred[target]
+                    if isinstance(pred_data, dict):
+                        ml_pred = pred_data.get('prediction', 0)
+                        confidence = pred_data.get('confidence', 0)
+                        interpretation = pred_data.get('interpretation', '')
+                    else:
+                        ml_pred = pred_data if isinstance(pred_data, (int, float)) else 0
+                        confidence = 0.8
+                        interpretation = ""
+                else:
+                    ml_pred = 0
+                    confidence = 0.5
+                    interpretation = ""
+                
+                rating = get_rating(target, ml_pred)
+                confidence_label = get_confidence_label(confidence)
+                formatted_val = format_value(target, ml_pred)
+                
+                row[f'{label}_Score'] = round(ml_pred, 4)
+                row[f'{label}_Rating'] = rating
+                row[f'{label}_Confidence'] = f"{confidence:.0%} ({confidence_label})"
+                row[f'{label}_Interpretation'] = interpretation or f"Value: {formatted_val}"
+        
+        # Add rule-based findings summary
+        entity_findings = [f for f in rule_findings if f.get('entity_id') == entity_row.get('entity_id', '')]
+        critical_count = sum(1 for f in entity_findings if f.get('severity') == 'Critical')
+        high_count = sum(1 for f in entity_findings if f.get('severity') == 'High')
+        medium_count = sum(1 for f in entity_findings if f.get('severity') == 'Medium')
+        
+        row['Rule_Findings_Critical'] = critical_count
+        row['Rule_Findings_High'] = high_count
+        row['Rule_Findings_Medium'] = medium_count
+        row['Total_Rule_Findings'] = len(entity_findings)
+        
+        # Top finding summary
+        if entity_findings:
+            top_finding = max(entity_findings, key=lambda f: {'Critical': 3, 'High': 2, 'Medium': 1, 'Low': 0}.get(f.get('severity', ''), 0))
+            row['Top_Finding'] = f"[{top_finding['severity']}] {top_finding['category']}: {top_finding['description'][:100]}"
+        else:
+            row['Top_Finding'] = 'No rule-based findings'
+        
+        # Overall recommendation
+        if critical_count > 0:
+            row['Examiner_Action'] = 'IMMEDIATE REVIEW REQUIRED'
+        elif high_count > 0:
+            row['Examiner_Action'] = 'Priority Review Recommended'
+        elif medium_count > 0:
+            row['Examiner_Action'] = 'Standard Review'
+        else:
+            row['Examiner_Action'] = 'No Action Required'
+        
+        output_rows.append(row)
     
     return pd.DataFrame(output_rows)
 
-def generate_file_b(df: pd.DataFrame, results: List[Dict]) -> pd.DataFrame:
+
+# ────────────────────────────────────────────────────────────────
+# FILE B: IMPROVEMENT RECOMMENDATIONS (for SOC Management)
+# ────────────────────────────────────────────────────────────────
+def generate_file_b_recommendations(
+    entities_df: pd.DataFrame,
+    ml_predictions: List[Dict],
+    rule_findings: List[Dict]
+) -> pd.DataFrame:
+    """
+    Generate File B: SOC Improvement Recommendations
+    For SOC Management - prioritized actionable recommendations.
+    """
     output_rows = []
-    for i, (_, row) in enumerate(df.iterrows()):
-        ensemble_result = results[i]
-        triggered_playbooks = identify_triggered_playbook(row)
+    
+    for idx, entity_row in entities_df.iterrows():
+        entity_id = entity_row.get('entity_id', f'ENTITY-{idx}')
+        period = entity_row.get('period', 'Unknown')
         
-        for pb_key in triggered_playbooks:
-            pb = PLAYBOOKS[pb_key]
-            ioc_details = []
-            if 'failed_login' in str(row.get('alert_description', '')).lower():
-                ioc_details.append('Failed login count threshold exceeded')
-            if row.get('dst_port_risk', 0) == 1:
-                ioc_details.append(f"High-risk destination port: {row.get('dest_port', 'unknown')}")
-            if row.get('keyword_match_count', 0) > 0:
-                ioc_details.append(f"Attack keywords matched: {int(row['keyword_match_count'])}")
-            if row.get('high_volume', 0) == 1:
-                ioc_details.append(f"High volume transfer: {row.get('total_bytes', 0):,} bytes")
-            if row.get('suspicious_ua', 0) == 1:
-                ioc_details.append(f"Suspicious user agent: {row.get('user_agent', 'unknown')[:50]}")
-            if row.get('src_ip_rare', 0) == 1:
-                ioc_details.append(f"Rare source IP: {row.get('source_ip', 'unknown')}")
-            
-            ticket_num = row.get('ticket_number', f'TKT-{datetime.now().strftime("%Y%m%d")}-{i+1:05d}')
-            if pd.isna(ticket_num) or ticket_num == '':
-                ticket_num = f'TKT-{datetime.now().strftime("%Y%m%d")}-{i+1:05d}'
-            
-            timestamp = row.get('timestamp', datetime.now().isoformat())
-            if pd.isna(timestamp):
-                timestamp = datetime.now().isoformat()
-            
+        # Collect all issues for this entity
+        entity_findings = [f for f in rule_findings if f.get('entity_id') == entity_row.get('entity_id', '')]
+        
+        # Also check ML predictions for issues
+        pred_idx = min(idx, len(ml_predictions) - 1) if ml_predictions else 0
+        
+        recommendations = []
+        
+        # From rule findings
+        for finding in rule_findings:
+            if finding.get('entity_id') == entity_row.get('entity_id', ''):
+                recommendations.append({
+                    'Priority': 1 if finding['severity'] == 'Critical' else 2,
+                    'Category': finding['category'],
+                    'Issue': finding['description'],
+                    'Evidence_Value': finding.get('evidence_value', 'N/A'),
+                    'Recommendation': finding['recommendation'],
+                    'Source': 'RULE_BASED',
+                    'Target_Metric': finding['category']
+                })
+        
+        # From ML predictions - check for poor scores
+        if ml_predictions and pred_idx < len(ml_predictions):
+            preds = ml_predictions[pred_idx]
+            for target in EFFICIENCY_TARGETS:
+                if target in preds:
+                    pred = preds[target]
+                    if isinstance(pred, dict):
+                        score = pred.get('prediction', 0)
+                        confidence = pred.get('confidence', 0)
+                    else:
+                        score = pred
+                        confidence = 0.5
+                    
+                    rating = get_rating(target, score)
+                    if rating in ['Critical', 'Needs Improvement'] and confidence > 0.5:
+                        recs = IMPROVEMENT_RECOMMENDATIONS.get(target, [])
+                        for rec in recs:
+                            recommendations.append({
+                                'Priority': 1 if rating == 'Critical' else 2,
+                                'Category': TARGET_LABELS.get(target, target),
+                                'Issue': f"{TARGET_LABELS.get(target, target)} rated {rating} ({format_value(target, score)})",
+                                'Evidence_Value': format_value(target, score),
+                                'Recommendation': rec,
+                                'Source': 'ML_PREDICTED',
+                                'Target_Metric': target
+                            })
+        
+        # Deduplicate recommendations
+        seen = set()
+        unique_recs = []
+        for rec in recommendations:
+            key = (rec['Category'], rec['Recommendation'])
+            if key not in seen:
+                seen.add(key)
+                unique_recs.append(rec)
+        
+        # Sort by priority
+        unique_recs.sort(key=lambda x: x['Priority'])
+        
+        # Create rows (one per recommendation)
+        for priority_idx, rec in enumerate(unique_recs):
             output_rows.append({
-                'Ticket_Number': clean_nan(ticket_num),
-                'Rule_Playbook_Triggered': clean_nan(pb['name']),
-                'Rule_Triggering_Activity_IoC': clean_nan('; '.join(ioc_details) if ioc_details else pb['trigger']),
-                'Timestamp_of_IoC': clean_nan(timestamp),
-                'Service_Functionality_Affected_Potential': clean_nan('; '.join(pb['services']))
+                'Entity_ID': entity_row.get('entity_id', f'ENTITY-{idx}'),
+                'Period': entity_row.get('period', 'Unknown'),
+                'Sector': entity_row.get('sector', 'Unknown'),
+                'Criticality': entity_row.get('criticality', 'Unknown'),
+                'Recommendation_Priority': rec['Priority'],
+                'Category': rec['Category'],
+                'Issue_Description': rec['Issue'],
+                'Evidence_Value': rec['Evidence_Value'],
+                'Recommended_Action': rec['Recommendation'],
+                'Source': rec['Source'],
+                'Target_Metric': rec.get('Target_Metric', ''),
+                'Implementation_Priority': 'Immediate' if rec['Priority'] == 1 else 'High' if rec['Priority'] == 2 else 'Medium',
+                'Estimated_Effort': _estimate_effort(rec['Recommendation']),
+                'Responsible_Role': _assign_role(rec['Category'])
             })
     
     return pd.DataFrame(output_rows)
 
-def run_full_pipeline(df: pd.DataFrame, investigators: List[str] = None) -> Dict[str, pd.DataFrame]:
-    detector = EnsembleDetector()
-    detector.train(df)
-    results = detector.predict(df)
+
+def _estimate_effort(recommendation: str) -> str:
+    """Estimate implementation effort for a recommendation."""
+    recommendation = recommendation.lower()
+    if any(kw in recommendation for kw in ['mandate', 'implement', 'develop', 'establish']):
+        return 'High (2-4 weeks)'
+    elif any(kw in recommendation for kw in ['review', 'update', 'tune', 'adjust']):
+        return 'Medium (1-2 weeks)'
+    else:
+        return 'Low (1-3 days)'
+
+
+def _assign_role(category: str) -> str:
+    """Assign responsible role based on category."""
+    category = category.lower()
+    if any(kw in category for kw in ['playbook', 'escalation', 'workflow']):
+        return 'SOC Manager / Playbook Engineer'
+    elif any(kw in category for kw in ['signature', 'detection', 'rule']):
+        return 'Detection Engineer / Threat Intel'
+    elif any(kw in category for kw in ['evidence', 'investigation', 'classification']):
+        return 'Senior Analyst / Investigation Lead'
+    elif any(kw in category for kw in ['efficiency', 'workload', 'automation']):
+        return 'SOC Manager / Automation Engineer'
+    elif any(kw in category for kw in ['signature', 'detection']):
+        return 'Detection Engineer'
+    elif any(kw in category for kw in ['training', 'analyst', 'certification']):
+        return 'HR / Training Coordinator'
+    return 'SOC Manager'
+
+
+def run_full_evaluation_pipeline(
+    entities_df: pd.DataFrame,
+    evaluator: Any
+) -> Dict[str, pd.DataFrame]:
+    """
+    Run complete evaluation pipeline and generate both output files.
+    """
+    results = []
+    for _, entity_row in entities_df.iterrows():
+        row_df = pd.DataFrame([entity_row.to_dict()])
+        eval_result = evaluator.evaluate(pd.DataFrame([entity_row.to_dict()]))
+        results.append({
+            'entity_row': entity_row,
+            'ml_predictions': evaluator.model.predict_with_confidence(pd.DataFrame([entity_row.to_dict()])),
+            'rule_findings': evaluator.rules_engine.analyze(pd.DataFrame([entity_row.to_dict()])),
+            'overall': eval_result.get('overall_assessment', {})
+        })
     
-    file_a = generate_file_a(df, results, investigators)
-    file_b = generate_file_b(df, results)
+    # Generate File A
+    file_a = generate_file_a_efficiency(
+        entities_df,
+        [r['ml_predictions'] for r in results],
+        [f for r in results for f in r['rule_findings']]
+    )
     
-    return {'file_a': file_a, 'file_b': file_b, 'detector': detector, 'raw_results': results}
+    # Generate File B
+    file_b = generate_file_b_recommendations(
+        entities_df,
+        [r['ml_predictions'] for r in results],
+        [f for r in results for f in r['rule_findings']]
+    )
+    
+    return {
+        'file_a_efficiency_report': file_a,
+        'file_b_recommendations': file_b,
+        'detailed_results': results
+    }
+
+
+def export_to_csv(file_a: pd.DataFrame, file_b: pd.DataFrame, output_dir: str = 'output'):
+    """Export both files to CSV."""
+    os.makedirs(output_dir, exist_ok=True)
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    
+    file_a_path = os.path.join(output_dir, f'File_A_Efficiency_Report_{timestamp}.csv')
+    file_b_path = os.path.join(output_dir, f'File_B_Recommendations_{timestamp}.csv')
+    
+    file_a.to_csv(file_a_path, index=False)
+    file_b.to_csv(file_b_path, index=False)
+    
+    return file_a_path, file_b_path

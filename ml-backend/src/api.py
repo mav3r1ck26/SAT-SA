@@ -1,27 +1,21 @@
-from fastapi import FastAPI, HTTPException, UploadFile, File, BackgroundTasks
+from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
 import pandas as pd
 import numpy as np
 from datetime import datetime
 import io
-import json
-import uuid
+import os
 
-try:
-    from .models import EnsembleDetector
-    from .features import extract_features
-    from .outputs import generate_file_a, generate_file_b, run_full_pipeline, PLAYBOOKS
-except ImportError:
-    from models import EnsembleDetector
-    from features import extract_features
-    from outputs import generate_file_a, generate_file_b, run_full_pipeline, PLAYBOOKS
+from .models import SOCEfficiencyEvaluator, train_efficiency_model, evaluate_model
+from .features import extract_soc_features, SOC_FEATURES, EFFICIENCY_TARGETS
+from .generate_data import generate_soc_efficiency_data, prepare_training_data
 
 app = FastAPI(
-    title="SAT-SA ML Backend",
-    description="Supervised (Decision Tree) + Unsupervised (K-Means) Attack Detection",
-    version="1.0.0"
+    title="SAT-SA ML Backend - SOC Efficiency Evaluation",
+    description="ML-powered SOC efficiency evaluation (not threat classification)",
+    version="2.0.0"
 )
 
 app.add_middleware(
@@ -32,82 +26,57 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-detector = None
-training_stats = {}
+evaluator = None
+model_path = os.path.join(os.path.dirname(__file__), "..", "models", "soc_efficiency_model.pkl")
 
-class AlertInput(BaseModel):
-    timestamp: str
-    source_ip: Optional[str] = None
-    dest_ip: Optional[str] = None
-    source_port: Optional[int] = None
-    dest_port: Optional[int] = None
-    protocol: Optional[str] = None
-    bytes_sent: Optional[int] = 0
-    bytes_received: Optional[int] = 0
-    packet_count: Optional[int] = 0
-    alert_description: Optional[str] = ""
-    user_agent: Optional[str] = ""
-    http_status: Optional[int] = None
-    ticket_number: Optional[str] = None
-    label: Optional[int] = None
+class SOCEntityInput(BaseModel):
+    entity_id: str
+    period: str
+    features: Dict[str, float]
 
-class BatchInput(BaseModel):
-    alerts: List[AlertInput]
-    investigators: Optional[List[str]] = None
+class BatchEfficiencyInput(BaseModel):
+    entities: List[SOCEntityInput]
 
-class PredictionResponse(BaseModel):
-    ticket_number: str
-    classification: str
-    confidence: float
-    supervised_pred: int
-    unsupervised_pred: int
-    anomaly_score: float
+class EfficiencyResponse(BaseModel):
+    entity_id: str
+    period: str
+    efficiency_scores: Dict[str, Dict[str, Any]]
+    rule_findings: List[Dict]
+    overall_assessment: Dict[str, Any]
 
-class FileAResponse(BaseModel):
-    Investigator: str
-    Ticket_Number: str
-    Potential_Attack_Classification: str
-    TP_or_FP: str
-    Escalation_Needed: str
-    Reasoning: str
-
-class FileBResponse(BaseModel):
-    Ticket_Number: str
-    Rule_Playbook_Triggered: str
-    Rule_Triggering_Activity_IoC: str
-    Timestamp_of_IoC: str
-    Service_Functionality_Affected_Potential: str
+class TrainingResponse(BaseModel):
+    success: bool
+    metrics: Dict
+    message: str
 
 @app.on_event("startup")
 async def startup_event():
-    global detector
-    detector = EnsembleDetector()
-    import os
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    model_dir = os.path.join(base_dir, "..", "models")
-    sup_path = os.path.join(model_dir, "supervised_model.pkl")
-    unsup_path = os.path.join(model_dir, "unsupervised_model.pkl")
-    if os.path.exists(sup_path) and os.path.exists(unsup_path):
+    global evaluator
+    evaluator = SOCEfficiencyEvaluator()
+    if os.path.exists(model_path):
         try:
-            detector.load(sup_path, unsup_path)
-            print("Models loaded successfully on startup")
+            evaluator.model.load(model_path)
+            print("ML model loaded successfully")
         except Exception as e:
-            print(f"Failed to load models: {e}")
-    else:
-        print(f"Model files not found at {sup_path}, {unsup_path}")
+            print(f"Could not load model: {e}")
 
 @app.get("/health")
 async def health_check():
     return {
         "status": "healthy",
-        "service": "SAT-SA ML Backend",
-        "models_loaded": detector is not None and detector.supervised.is_trained and detector.unsupervised.is_trained,
+        "service": "SAT-SA ML Backend - SOC Efficiency Evaluation",
+        "models_loaded": evaluator is not None and evaluator.model.is_trained if evaluator else False,
+        "model_path": model_path,
         "timestamp": datetime.now().isoformat()
     }
 
-@app.post("/train")
-async def train_model(file: UploadFile = File(...)):
-    global detector, training_stats
+@app.post("/train", response_model=TrainingResponse)
+async def train_model_endpoint(
+    file: UploadFile = File(...),
+    n_estimators: int = 200
+):
+    """Train the SOC efficiency model from CSV upload."""
+    global evaluator
     
     if not file.filename.endswith('.csv'):
         raise HTTPException(400, "Only CSV files supported")
@@ -115,76 +84,81 @@ async def train_model(file: UploadFile = File(...)):
     content = await file.read()
     df = pd.read_csv(io.StringIO(content.decode('utf-8')))
     
-    if 'label' not in df.columns:
-        raise HTTPException(400, "Training data must contain 'label' column (0=Normal, 1=Attack)")
+    if 'entity_id' not in df.columns or 'period' not in df.columns:
+        raise HTTPException(400, "CSV must contain 'entity_id' and 'period' columns")
     
-    detector = EnsembleDetector()
-    training_stats = detector.train(df)
+    # Check required targets
+    missing_targets = [t for t in EFFICIENCY_TARGETS if t not in df.columns]
+    if missing_targets:
+        raise HTTPException(400, f"Missing target columns: {missing_targets}")
     
-    return {
-        "message": "Model trained successfully",
-        "training_stats": training_stats,
-        "samples": len(df),
-        "features": len(detector.supervised.feature_names) if detector.supervised.feature_names else 0
-    }
-
-@app.post("/predict", response_model=List[PredictionResponse])
-async def predict_batch(input_data: BatchInput):
-    global detector
+    evaluator = SOCEfficiencyEvaluator()
+    results = evaluator.model.train(df.dropna(subset=EFFICIENCY_TARGETS))
     
-    if detector is None or not detector.supervised.is_trained:
-        raise HTTPException(503, "Model not trained. Call /train first.")
-    
-    df = pd.DataFrame([alert.model_dump() for alert in input_data.alerts])
-    if 'ticket_number' not in df.columns:
-        df['ticket_number'] = [f'TKT-{datetime.now().strftime("%Y%m%d")}-{i+1:05d}' for i in range(len(df))]
-    
-    results = detector.predict(df)
-    
-    return [
-        PredictionResponse(
-            ticket_number=df.iloc[i]['ticket_number'],
-            classification=r['classification'],
-            confidence=r['confidence'],
-            supervised_pred=r['supervised_pred'],
-            unsupervised_pred=r['unsupervised_pred'],
-            anomaly_score=r['anomaly_score']
-        )
-        for i, r in enumerate(results)
-    ]
-
-@app.post("/analyze", response_model=Dict[str, Any])
-async def analyze_full(input_data: BatchInput):
-    global detector
-    
-    if detector is None or not detector.supervised.is_trained:
-        raise HTTPException(503, "Model not trained. Call /train first.")
-    
-    df = pd.DataFrame([alert.model_dump() for alert in input_data.alerts])
-    if 'ticket_number' not in df.columns:
-        df['ticket_number'] = [f'TKT-{datetime.now().strftime("%Y%m%d")}-{i+1:05d}' for i in range(len(df))]
-    
-    results = detector.predict(df)
-    file_a = generate_file_a(df, results, input_data.investigators)
-    file_b = generate_file_b(df, results)
+    evaluator.model.save(model_path)
     
     return {
-        "predictions": results,
-        "file_a": file_a.to_dict(orient='records'),
-        "file_b": file_b.to_dict(orient='records'),
-        "summary": {
-            "total": len(df),
-            "attacks": sum(1 for r in results if r['classification'] == 'Attack'),
-            "normal": sum(1 for r in results if r['classification'] == 'Normal'),
-            "escalations_needed": sum(1 for r in results if r['classification'] == 'Attack' and r['confidence'] >= 0.7)
-        }
+        "success": True,
+        "metrics": results,
+        "message": f"Model trained successfully on {len(df)} samples"
     }
 
-@app.post("/analyze-csv")
-async def analyze_csv(file: UploadFile = File(...), investigators: Optional[str] = None):
-    global detector
+@app.post("/evaluate", response_model=List[EfficiencyResponse])
+async def evaluate_efficiency(input_data: BatchEfficiencyInput):
+    """Evaluate SOC efficiency for one or more entities."""
+    if not evaluator or not evaluator.model.is_trained:
+        raise HTTPException(503, "Model not trained. Call /train first.")
     
-    if detector is None or not detector.supervised.is_trained:
+    results = []
+    for entity_input in input_data.entities:
+        # Create DataFrame row
+        row = entity_input.features.copy()
+        row['entity_id'] = entity_input.entity_id
+        row['period'] = entity_input.period
+        df = pd.DataFrame([row])
+        
+        # Ensure all features present
+        for f in SOC_FEATURES:
+            if f not in df.columns:
+                df[f] = 0
+        
+        # Evaluate
+        eval_result = evaluator.evaluate(df)
+        
+        # Format response
+        efficiency_scores = {}
+        for target in EFFICIENCY_TARGETS:
+            if target in evaluator.model.predict(pd.DataFrame([row])).tolist()[0]:
+                pass
+        
+        # Use evaluator's results
+        ml_results = evaluator.model.predict_with_confidence(pd.DataFrame([row]))
+        
+        # Format efficiency scores
+        efficiency_scores = {}
+        for i, target in enumerate(EFFICIENCY_TARGETS):
+            if i < len(ml_results):
+                pred = ml_results[i].get(target, {})
+                efficiency_scores[target] = {
+                    "score": pred.get("prediction", 0),
+                    "confidence": pred.get("confidence", 0),
+                    "interpretation": pred.get("interpretation", "")
+                }
+        
+        results.append(EfficiencyResponse(
+            entity_id=entity_input.entity_id,
+            period=entity_input.period,
+            efficiency_scores=efficiency_scores,
+            rule_findings=eval_result.get("rule_findings", []),
+            overall_assessment=eval_result.get("overall_assessment", {})
+        ))
+    
+    return results
+
+@app.post("/evaluate-csv")
+async def evaluate_csv(file: UploadFile = File(...)):
+    """Evaluate SOC efficiency from CSV upload."""
+    if not evaluator or not evaluator.model.is_trained:
         raise HTTPException(503, "Model not trained. Call /train first.")
     
     if not file.filename.endswith('.csv'):
@@ -193,52 +167,68 @@ async def analyze_csv(file: UploadFile = File(...), investigators: Optional[str]
     content = await file.read()
     df = pd.read_csv(io.StringIO(content.decode('utf-8')))
     
-    if 'ticket_number' not in df.columns:
-        df['ticket_number'] = [f'TKT-{datetime.now().strftime("%Y%m%d")}-{i+1:05d}' for i in range(len(df))]
-    else:
-        # Convert to string first to handle NaN values
-        df['ticket_number'] = df['ticket_number'].astype(str).replace('nan', '')
-        mask = (df['ticket_number'] == '') | (df['ticket_number'].str.lower() == 'nan')
-        df.loc[mask, 'ticket_number'] = [f'TKT-{datetime.now().strftime("%Y%m%d")}-{i+1:05d}' for i in range(len(df))]
+    if 'entity_id' not in df.columns or 'period' not in df.columns:
+        raise HTTPException(400, "CSV must contain 'entity_id' and 'period' columns")
     
-    inv_list = investigators.split(',') if investigators else None
-    results = detector.predict(df)
-    file_a = generate_file_a(df, results, inv_list)
-    file_b = generate_file_b(df, results)
+    # Ensure all features present
+    for f in SOC_FEATURES:
+        if f not in df.columns:
+            df[f] = 0
+    
+    results = []
+    for _, row in df.iterrows():
+        row_df = pd.DataFrame([row.to_dict()])
+        eval_result = evaluator.evaluate(row_df)
+        results.append({
+            "entity_id": row.get('entity_id', 'Unknown'),
+            "period": row.get('period', 'Unknown'),
+            "efficiency_scores": eval_result.get("ml_predictions", []),
+            "rule_findings": eval_result.get("rule_findings", []),
+            "overall_assessment": eval_result.get("overall_assessment", {})
+        })
     
     return {
-        "file_a": file_a.to_dict(orient='records'),
-        "file_b": file_b.to_dict(orient='records'),
-        "summary": {
-            "total": len(df),
-            "attacks": sum(1 for r in results if r['classification'] == 'Attack'),
-            "normal": sum(1 for r in results if r['classification'] == 'Normal'),
-        }
+        "success": True,
+        "evaluated_entities": len(results),
+        "results": results
     }
-
-@app.get("/playbooks")
-async def list_playbooks():
-    return {"playbooks": {k: {"name": v["name"], "trigger": v["trigger"], "services": v["services"]} for k, v in PLAYBOOKS.items()}}
-
-@app.get("/playbooks/{playbook_id}")
-async def get_playbook(playbook_id: str):
-    if playbook_id not in PLAYBOOKS:
-        raise HTTPException(404, "Playbook not found")
-    return PLAYBOOKS[playbook_id]
 
 @app.get("/model/info")
 async def model_info():
-    global detector, training_stats
-    if detector is None:
-        raise HTTPException(503, "Model not initialized")
+    if not evaluator or not evaluator.model.is_trained:
+        return {"status": "not_trained"}
     
     return {
-        "supervised_trained": detector.supervised.is_trained,
-        "unsupervised_trained": detector.unsupervised.is_trained,
-        "feature_count": len(detector.supervised.feature_names) if detector.supervised.feature_names else 0,
-        "training_stats": training_stats,
-        "supervised_features": detector.supervised.feature_names,
-        "unsupervised_features": detector.unsupervised.feature_names
+        "status": "trained",
+        "model_type": evaluator.model.model_type,
+        "features": evaluator.model.feature_names,
+        "targets": evaluator.model.target_names,
+        "feature_importance": evaluator.model.feature_importance if hasattr(evaluator.model, 'feature_importance') else {}
+    }
+
+@app.post("/train-auto")
+async def train_auto(
+    n_entities: int = 200,
+    periods_per_entity: int = 6,
+    model_type: str = "ensemble"
+):
+    """Auto-generate training data and train model."""
+    global evaluator
+    
+    data = list(generate_soc_efficiency_data(n_entities, periods_per_entity))
+    df = pd.DataFrame(data)
+    
+    evaluator = SOCEfficiencyEvaluator()
+    evaluator.model.model_type = model_type
+    results = evaluator.model.train(df)
+    
+    evaluator.model.save(model_path)
+    
+    return {
+        "success": True,
+        "training_samples": len(df),
+        "metrics": results,
+        "message": f"Auto-trained on {len(df)} synthetic samples"
     }
 
 if __name__ == "__main__":

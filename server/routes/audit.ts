@@ -1,7 +1,12 @@
-import { Router } from 'express'
+import { Router, Response } from 'express'
 import { AuditLog } from '../models/AuditLog'
 
 const router = Router()
+
+function handleError(err: unknown, res: Response) {
+  const message = err instanceof Error ? err.message : 'Unknown error'
+  res.status(500).json({ success: false, error: { code: 'INTERNAL_ERROR', message } })
+}
 
 // List audit trail with filters
 router.get('/', async (req, res) => {
@@ -19,20 +24,16 @@ router.get('/', async (req, res) => {
       ]
     }
     const records = await AuditLog.find(filter).sort({ timestamp: -1 }).limit(Number(limit)).lean()
-    res.json(records)
-  } catch (err) {
-    res.status(500).json({ error: err.message })
-  }
+    res.json({ success: true, data: records })
+  } catch (err) { handleError(err, res) }
 })
 
 // Export audit trail (returns raw records for CSV generation)
 router.get('/export', async (req, res) => {
   try {
     const records = await AuditLog.find().sort({ timestamp: -1 }).limit(500).lean()
-    res.json(records)
-  } catch (err) {
-    res.status(500).json({ error: err.message })
-  }
+    res.json({ success: true, data: records })
+  } catch (err) { handleError(err, res) }
 })
 
 export default router

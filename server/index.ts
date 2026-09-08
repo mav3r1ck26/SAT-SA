@@ -14,6 +14,7 @@ import reportsRouter from './routes/reports'
 import ingestionRouter from './routes/ingestion'
 import evidenceRouter from './routes/evidence'
 import validationRouter from './routes/validation'
+import mlRouter from './routes/ml'
 
 const app = express()
 const PORT = process.env.API_PORT || 3001
@@ -46,6 +47,7 @@ app.use('/api/reports', reportsRouter)
 app.use('/api/ingestion', ingestionRouter)
 app.use('/api/evidence', evidenceRouter)
 app.use('/api/validation', validationRouter)
+app.use('/api/ml', mlRouter)
 
 // Start
 async function main() {

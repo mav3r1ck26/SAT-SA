@@ -2,162 +2,193 @@ import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
 import random
-import sys
 import os
+import sys
+from typing import List, Dict
+
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-try:
-    from .models import EnsembleDetector
-    from .features import extract_features
-except ImportError:
-    from models import EnsembleDetector
-    from features import extract_features
+from features import SOC_FEATURES, EFFICIENCY_TARGETS
 
-ATTACK_DESCRIPTIONS = [
-    "Brute force attack detected on SSH port 22 from 192.168.1.100",
-    "Multiple failed login attempts for admin account",
-    "SQL injection attempt in login parameter",
-    "Suspicious PowerShell execution with encoded command",
-    "C2 beaconing to known malicious domain evil.com",
-    "Large data transfer to external IP 203.0.113.50",
-    "Privilege escalation via sudo exploitation",
-    "Lateral movement using PsExec to WORKSTATION-05",
-    "Port scanning activity from 10.0.0.50",
-    "Malware detected: Trojan.Win32.Emotet",
-    "Ransomware encryption activity on file server",
-    "Credential dumping using Mimikatz",
-    "Pass-the-hash attack on domain controller",
-    "DNS tunneling detected to suspicious domain",
-    "Web shell uploaded to /var/www/html/shell.php",
-    "Unauthorized admin account creation",
-    "Suspicious scheduled task creation",
-    "Registry modification for persistence",
-    "WMI remote command execution",
-    "SMB relay attack detected"
-]
+def generate_soc_efficiency_data(n_entities: int = 50, periods_per_entity: int = 4) -> List[Dict]:
+    """Generate synthetic SOC efficiency training data."""
+    records = []
+    
+    for e in range(n_entities):
+        entity_id = f'CSE-{str(1000 + e).zfill(3)}'
+        sector = random.choice(['Power', 'Telecom', 'Banking', 'Transport', 'Energy', 'Government', 'Health', 'Water', 'Defence', 'Transport'])
+        criticality = random.choice(['Critical', 'High', 'Medium', 'Low'])
+        
+        for p in range(periods_per_entity):
+            period = f'Q{p+1} FY 202{p//4 + 23}-{str((p//4 + 24) % 100).zfill(2)}'
+            
+            maturity = 0.3 + (p / max(1, periods_per_entity)) * 0.4 + np.random.uniform(-0.1, 0.1)
+            maturity = np.clip(maturity, 0, 1)
+            
+            is_critical = criticality in ['Critical', 'High']
+            features = _generate_features_for_maturity(maturity, is_critical)
+            targets = _generate_efficiency_targets(features)
+            
+            record = {
+                'entity_id': f'CSE-{str(1000 + e).zfill(3)}',
+                'period': period,
+                'sector': sector,
+                'criticality': criticality,
+                'maturity': maturity
+            }
+            record.update(features)
+            record.update(targets)
+            
+            records.append(record)
+    
+    return records
 
-NORMAL_DESCRIPTIONS = [
-    "Regular SSH login from authorized admin workstation",
-    "Scheduled database backup completed successfully",
-    "Windows update downloaded and installed",
-    "User accessed SharePoint document library",
-    "Email sent via Exchange server",
-    "VPN connection from corporate laptop",
-    "Print job sent to network printer",
-    "DNS query for internal domain",
-    "HTTP request to company intranet",
-    "File sync with OneDrive completed",
-    "Teams meeting recording saved to Stream",
-    "Outlook sync with Exchange Online",
-    "Antivirus definition update downloaded",
-    "Group policy refresh completed",
-    "Certificate renewal for internal CA",
-    "DHCP lease renewal for workstation",
-    "NTP time synchronization successful",
-    "WSUS update scan completed",
-    "Inventory scan by SCCM client",
-    "Log rotation performed on syslog server"
-]
 
-ATTACK_IPS = [
-    '192.168.1.100', '10.0.0.50', '172.16.0.25', '203.0.113.50',
-    '198.51.100.10', '45.33.32.156', '185.220.101.1', '91.219.194.10'
-]
+def _generate_features_for_maturity(maturity: float, is_critical: bool) -> Dict[str, float]:
+    inv = 1 - maturity
+    features = {}
+    
+    features['total_alerts_per_period'] = max(100, np.random.normal(5000, 1500))
+    features['alerts_per_analyst_per_shift'] = np.random.normal(20, 5) * (1 + inv * 0.5)
+    features['cases_per_analyst_per_shift'] = np.random.normal(3, 1) * (1 + inv * 0.3)
+    features['alert_to_case_ratio'] = np.random.beta(2, 8)
+    
+    features['mean_acknowledgment_time_min'] = max(1, np.random.normal(5 * (1 + inv * 2), 2))
+    features['mean_investigation_time_min'] = max(10, np.random.normal(45 * (1 + inv), 15))
+    features['mean_closure_time_min'] = max(30, np.random.normal(60 * (1 + inv * 0.5), 20))
+    features['pct_cases_closed_under_1hr'] = np.random.beta(2 + maturity * 3, 5)
+    features['pct_cases_closed_under_4hr'] = np.random.beta(3 + maturity * 2, 4)
+    features['pct_cases_closed_under_24hr'] = np.random.beta(5 + maturity * 2, 2)
+    
+    features['false_positive_rate_current'] = np.random.beta(2, 8 + maturity * 10)
+    features['true_positive_rate_current'] = 1 - np.random.beta(2, 5 + maturity * 5)
+    features['escalation_rate'] = np.random.beta(3 + maturity * 2, 5)
+    features['reopened_case_rate'] = np.random.beta(1, 10 + maturity * 5)
+    
+    features['evidence_per_case_avg'] = np.random.gamma(2 + maturity * 2, 1.5)
+    features['cases_with_zero_evidence_pct'] = np.random.beta(2, 8 + maturity * 5)
+    features['cases_with_insufficient_iocs_pct'] = np.random.beta(2, 10 + maturity * 8)
+    features['classification_changes_per_case'] = np.random.beta(1, 10 + maturity * 5)
+    
+    features['analyst_count'] = np.random.randint(3, 15)
+    features['workload_balance_index'] = np.random.beta(2, 5)
+    features['template_reuse_rate'] = np.random.beta(2, 8 + maturity * 5)
+    features['superficial_investigation_rate'] = np.random.beta(1.5, 8 + maturity * 5)
+    features['unusually_fast_closure_rate'] = np.random.beta(1.5, 10 + maturity * 5)
+    
+    features['critical_escalation_rate'] = np.random.beta(3 + maturity * 3, 4)
+    features['escalation_delay_avg_min'] = max(5, np.random.normal(45 * (1 + (1-maturity) * 0.5), 20))
+    features['playbook_execution_rate'] = np.random.beta(2 + maturity * 4, 3)
+    features['playbook_coverage_ratio'] = np.random.beta(3 + maturity * 3, 3)
+    features['playbook_adherence_rate'] = np.random.beta(3 + maturity * 2, 3)
+    
+    features['signature_age_avg_days'] = max(1, np.random.normal(180 * (1 + (1-maturity) * 2), 60))
+    features['signature_age_max_days'] = np.random.normal(365 * (1 + (1-maturity)), 100)
+    features['rules_updated_last_30d'] = np.random.randint(0, 10 + int(maturity * 10))
+    features['rules_updated_last_90d'] = np.random.randint(0, 30 + int(maturity * 30))
+    features['detection_coverage_ratio'] = np.random.beta(2 + maturity * 4, 3)
+    
+    features['threat_intel_feeds_active'] = np.random.randint(2, 10)
+    features['ioc_enrichment_rate'] = np.random.beta(3 + maturity * 2, 4)
+    features['context_enrichment_rate'] = np.random.beta(2 + maturity * 2, 4)
+    
+    features['telemetry_coverage_pct'] = np.random.beta(4 + maturity * 3, 3) * 100
+    features['log_source_count'] = np.random.randint(5, 30)
+    features['critical_asset_coverage_pct'] = np.random.beta(3 + maturity * 3, 3) * 100
+    
+    features['senior_analyst_ratio'] = np.random.beta(2 + maturity * 2, 3)
+    features['certifications_per_analyst'] = np.random.gamma(1.5 + maturity, 1)
+    features['training_hours_per_analyst_qtr'] = np.random.gamma(2 + maturity, 4)
+    
+    features['prev_period_fpr'] = np.random.beta(3, 10)
+    features['prev_period_efficiency'] = np.random.beta(4, 3)
+    features['trend_fpr_3m'] = np.random.normal(0, 0.05)
+    features['trend_efficiency_3m'] = np.random.normal(0, 0.05)
+    
+    return features
 
-NORMAL_IPS = [
-    '192.168.1.10', '192.168.1.25', '192.168.10.5', '192.168.10.12',
-    '10.0.1.50', '10.0.1.75', '10.0.2.10', '10.0.2.20',
-    '172.16.1.100', '172.16.1.105', '172.16.2.50', '172.16.2.55'
-]
 
-USER_AGENTS_NORMAL = [
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-    'Microsoft-Exchange/15.01', 'MSOffice/16.0', 'OneDrive/23.0',
-    'Teams/1.5.0', 'SCCM/5.0', 'WSUS/10.0'
-]
+def _generate_efficiency_targets(features: Dict[str, float]) -> Dict[str, float]:
+    fpr = features['false_positive_rate_current'] + np.random.normal(0, 0.02)
+    
+    misclass = (features.get('template_reuse_rate', 0) + features.get('superficial_investigation_rate', 0)) / 2
+    misclass = np.clip(misclass + np.random.normal(0, 0.03), 0, 1)
+    
+    base_eff = features.get('cases_per_analyst_per_shift', 2) * 3
+    eff = max(0.5, base_eff * (1 + np.random.normal(0, 0.15)))
+    
+    insuff = features.get('cases_with_insufficient_iocs_pct', 0.15)
+    insuff = np.clip(insuff + np.random.normal(0, 0.03), 0, 1)
+    
+    sig_age = features.get('signature_age_avg_days', 180)
+    sig_age = max(1, sig_age + np.random.normal(0, 20))
+    
+    pgap = 1 - features.get('playbook_coverage_ratio', 0.5)
+    pgap = np.clip(pgap + np.random.normal(0, 0.05), 0, 1)
+    
+    return {
+        'false_positive_rate': np.clip(fpr, 0, 1),
+        'incorrect_classification_ratio': np.clip(misclass, 0, 1),
+        'analyst_efficiency': max(0.1, eff),
+        'insufficient_evidence_ratio': np.clip(insuff, 0, 1),
+        'signature_age_days': max(1, sig_age),
+        'playbook_gap_ratio': np.clip(pgap, 0, 1)
+    }
 
-USER_AGENTS_SUSPICIOUS = [
-    'sqlmap/1.6', 'nmap/7.93', 'Nikto/2.1.6', 'dirb/2.22',
-    'gobuster/3.1', 'curl/7.68', 'wget/1.20', 'python-requests/2.28',
-    'Mozilla/5.0 (compatible; bot)', 'masscan/1.3'
-]
 
-PROTOCOLS = ['tcp', 'udp', 'http', 'https', 'ssh', 'rdp', 'smb', 'dns', 'ldap', 'kerberos', 'ftp', 'smtp']
-PORTS = [22, 23, 25, 53, 80, 135, 139, 389, 443, 445, 465, 587, 636, 1433, 3306, 3389, 5432, 5900, 5985, 5986, 8080, 8443]
-
-def generate_training_data(n_samples: int = 5000, attack_ratio: float = 0.3) -> pd.DataFrame:
-    n_attack = int(n_samples * attack_ratio)
-    n_normal = n_samples - n_attack
+def prepare_training_data(soc_data: List[Dict]) -> pd.DataFrame:
+    from .features import SOC_FEATURES, EFFICIENCY_TARGETS
     
     rows = []
-    base_time = datetime.now() - timedelta(days=30)
+    for record in soc_data:
+        row = {}
+        for f in SOC_FEATURES:
+            row[f] = record.get(f, 0)
+        for t in EFFICIENCY_TARGETS:
+            row[t] = record.get(t, np.nan)
+        rows.append(row)
     
-    for i in range(n_attack):
-        desc = random.choice(ATTACK_DESCRIPTIONS)
-        src_ip = random.choice(ATTACK_IPS + NORMAL_IPS[:4])
-        dst_ip = random.choice(NORMAL_IPS + ATTACK_IPS[:4])
-        protocol = random.choice(['ssh', 'rdp', 'smb', 'http', 'https', 'ldap', 'kerberos', 'dns'])
-        port = random.choice([22, 3389, 445, 80, 443, 389, 88, 53, 135, 139, 5985, 5986])
-        
-        hour = random.choices(range(24), weights=[0.5]*6 + [1]*10 + [0.5]*8)[0]
-        timestamp = base_time + timedelta(days=random.randint(0, 29), hours=hour, minutes=random.randint(0, 59))
-        
-        rows.append({
-            'timestamp': timestamp.isoformat(),
-            'source_ip': src_ip,
-            'dest_ip': dst_ip,
-            'source_port': random.randint(1024, 65535),
-            'dest_port': port,
-            'protocol': protocol,
-            'bytes_sent': random.randint(1000, 1000000) if 'exfil' in desc.lower() or 'transfer' in desc.lower() else random.randint(100, 50000),
-            'bytes_received': random.randint(100, 50000),
-            'packet_count': random.randint(10, 5000),
-            'alert_description': desc,
-            'user_agent': random.choice(USER_AGENTS_SUSPICIOUS) if random.random() < 0.3 else random.choice(USER_AGENTS_NORMAL),
-            'http_status': random.choice([200, 401, 403, 404, 500]) if protocol in ['http', 'https'] else None,
-            'ticket_number': f'TKT-{(base_time + timedelta(days=random.randint(0, 29))).strftime("%Y%m%d")}-{i+1:05d}',
-            'label': 1
-        })
-    
-    for i in range(n_normal):
-        desc = random.choice(NORMAL_DESCRIPTIONS)
-        src_ip = random.choice(NORMAL_IPS)
-        dst_ip = random.choice(NORMAL_IPS)
-        protocol = random.choice(['http', 'https', 'dns', 'tcp', 'udp', 'ssh', 'rdp', 'smb'])
-        port = random.choice([80, 443, 53, 22, 3389, 445, 135, 389])
-        
-        hour = random.choices(range(24), weights=[0.3]*6 + [1]*12 + [0.3]*6)[0]
-        timestamp = base_time + timedelta(days=random.randint(0, 29), hours=hour, minutes=random.randint(0, 59))
-        
-        rows.append({
-            'timestamp': timestamp.isoformat(),
-            'source_ip': src_ip,
-            'dest_ip': dst_ip,
-            'source_port': random.randint(1024, 65535),
-            'dest_port': port,
-            'protocol': protocol,
-            'bytes_sent': random.randint(100, 50000),
-            'bytes_received': random.randint(100, 100000),
-            'packet_count': random.randint(1, 1000),
-            'alert_description': desc,
-            'user_agent': random.choice(USER_AGENTS_NORMAL),
-            'http_status': random.choice([200, 301, 302, 304]) if protocol in ['http', 'https'] else None,
-            'ticket_number': f'TKT-{(base_time + timedelta(days=random.randint(0, 29))).strftime("%Y%m%d")}-{n_attack+i+1:05d}',
-            'label': 0
-        })
-    
-    df = pd.DataFrame(rows)
-    return df.sample(frac=1, random_state=42).reset_index(drop=True)
+    return pd.DataFrame(rows)
 
-def generate_inference_data(n_samples: int = 100) -> pd.DataFrame:
-    return generate_training_data(n_samples, attack_ratio=0.4).drop(columns=['label'])
 
-if __name__ == "__main__":
-    df = generate_training_data(5000)
-    df.to_csv('training_data.csv', index=False)
-    print(f"Generated {len(df)} training samples")
-    print(f"Attack: {(df['label']==1).sum()}, Normal: {(df['label']==0).sum()}")
+def generate_training_csv(n_entities: int = 100, periods_per_entity: int = 6, output_path: str = 'data/soc_efficiency_training.csv'):
+    """Generate and save training data to CSV."""
+    data = []
+    for e in range(n_entities):
+        sector = random.choice(['Power', 'Telecom', 'Banking', 'Transport', 'Energy', 'Government', 'Health', 'Water', 'Defence', 'Transport'])
+        criticality = random.choice(['Critical', 'High', 'Medium', 'Low'])
+        
+        for p in range(periods_per_entity):
+            period = f'Q{p+1} FY 202{p//4 + 23}-{str((p//4 + 24) % 100).zfill(2)}'
+            maturity = 0.3 + (p / max(1, periods_per_entity)) * 0.4 + np.random.uniform(-0.1, 0.1)
+            maturity = np.clip(maturity, 0, 1)
+            is_critical = criticality in ['Critical', 'High']
+            features = _generate_features_for_maturity(maturity, is_critical)
+            targets = _generate_efficiency_targets(features)
+            
+            record = {
+                'entity_id': f'CSE-{str(1000 + e).zfill(3)}',
+                'period': period,
+                'sector': sector,
+                'criticality': criticality,
+                'maturity': maturity
+            }
+            record.update(features)
+            record.update(targets)
+            data.append(record)
     
-    test_df = generate_inference_data(100)
-    test_df.to_csv('inference_data.csv', index=False)
-    print(f"Generated {len(test_df)} inference samples")
+    df = pd.DataFrame(data)
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    df.to_csv(output_path, index=False)
+    print(f"Generated {len(df)} samples")
+    print(f"Targets: {list(EFFICIENCY_TARGETS)}")
+    for t in EFFICIENCY_TARGETS:
+        if t in df.columns:
+            print(f"  {t}: mean={df[t].mean():.3f}, std={df[t].std():.3f}, range=[{df[t].min():.3f}, {df[t].max():.3f}]")
+    return df
+
+
+if __name__ == '__main__':
+    print("Generating SOC efficiency training data...")
+    df = generate_training_csv(100, 6, 'data/soc_efficiency_training.csv')
+    print("Done!")

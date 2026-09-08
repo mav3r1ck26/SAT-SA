@@ -8,8 +8,9 @@ export async function connectDB() {
       authSource: 'admin'
     })
     console.log('[DB] Connected to MongoDB:', mongoose.connection.host)
-  } catch (err) {
-    console.error('[DB] MongoDB connection failed:', err.message)
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Unknown error'
+    console.error('[DB] MongoDB connection failed:', message)
     process.exit(1)
   }
 }

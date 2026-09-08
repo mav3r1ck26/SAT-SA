@@ -34,7 +34,9 @@ export interface GeneratedReport {
 // ---- Entity Assessment Report ----
 export async function entityAssessmentReport(entityId: string): Promise<GeneratedReport> {
   const entity = await Entity.findOne({ id: entityId }).lean()
+  if (!entity) throw new Error(`Entity ${entityId} not found`)
   const metric = await EntityMetric.findOne({ entityId, period: 'Q2 FY 2026-27' }).lean()
+  if (!metric) throw new Error(`Metric for ${entityId} not found`)
   const findings = await Finding.find({ entityId }).lean()
   const benchmark = await peerBenchmark(entityId)
 
@@ -50,7 +52,7 @@ export async function entityAssessmentReport(entityId: string): Promise<Generate
       entity: { id: entity.id, name: entity.name, sector: entity.sector, criticality: entity.criticality, telemetryCoverage: entity.telemetryCoverage },
       riskScore: metric.riskScore,
       prevRiskScore: metric.prevRiskScore,
-      scoreBreakdown: { detection: metric.detection, investigation: metric.investigation, escalation: metric.escalation, operations: metric.operations, governance: metric.governance, resilience: metric.resilience },
+      scoreBreakdown: { threatDetection: metric.threatDetection, investigation: metric.investigation, escalation: metric.escalation, incidentResponse: metric.incidentResponse, securityOperations: metric.securityOperations, governanceOversight: metric.governanceOversight, operationalDiscipline: metric.operationalDiscipline, cyberResilience: metric.cyberResilience },
       operationalVolume: { alerts, cases },
       findings: findings.map(f => ({ id: f.id, title: f.title, severity: f.severity, confidence: f.confidence, status: f.status })),
       benchmark,
@@ -111,8 +113,8 @@ export async function negativeSpaceReport(): Promise<GeneratedReport> {
 
   const matrix = categories.map(cat => {
     const rows = telemetry.filter(t => t.category === cat)
-    const avg = (k: keyof any) => rows.length ? Math.round(rows.reduce((s, r) => s + (r[k] ?? 0), 0) / rows.length) : 0
-    return { category: cat, expected: 100, observed: avg('observed'), alertGeneration: avg('alertGen'), investigationEvidence: avg('investigationEvidence'), escalationEvidence: avg('escalationEvidence') }
+    const avg = (k: string) => rows.length ? Math.round(rows.reduce((s, r) => s + ((r as any)[k] ?? 0), 0) / rows.length) : 0
+    return { category: cat, expected: 100, observed: avg('observedCoverage'), alertGeneration: avg('alertGeneration'), investigationEvidence: avg('investigationEvidence'), escalationEvidence: avg('escalationEvidence') }
   })
 
   return {

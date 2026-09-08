@@ -1,7 +1,12 @@
-import { Router } from 'express'
+import { Router, Response } from 'express'
 import { Alert } from '../models/Alert'
 
 const router = Router()
+
+function handleError(err: unknown, res: Response) {
+  const message = err instanceof Error ? err.message : 'Unknown error'
+  res.status(500).json({ success: false, error: { code: 'INTERNAL_ERROR', message } })
+}
 
 // List alerts with filters & pagination
 router.get('/', async (req, res) => {
@@ -20,31 +25,25 @@ router.get('/', async (req, res) => {
       .limit(Number(limit))
       .lean()
 
-    res.json({ total, alerts })
-  } catch (err) {
-    res.status(500).json({ error: err.message })
-  }
+    res.json({ success: true, data: { total, alerts } })
+  } catch (err) { handleError(err, res) }
 })
 
 // Drill-down: get alert with its case and evidence timeline
 router.get('/:id/timeline', async (req, res) => {
   try {
     const alert = await Alert.findOne({ id: req.params.id }).lean()
-    if (!alert) return res.status(404).json({ error: 'Alert not found' })
-    res.json(alert)
-  } catch (err) {
-    res.status(500).json({ error: err.message })
-  }
+    if (!alert) return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Alert not found' } })
+    res.json({ success: true, data: alert })
+  } catch (err) { handleError(err, res) }
 })
 
 // Create an alert (ingested data)
 router.post('/', async (req, res) => {
   try {
     await Alert.create(req.body)
-    res.status(201).json({ success: true })
-  } catch (err) {
-    res.status(500).json({ error: err.message })
-  }
+    res.status(201).json({ success: true, message: 'Alert created' })
+  } catch (err) { handleError(err, res) }
 })
 
 export default router
