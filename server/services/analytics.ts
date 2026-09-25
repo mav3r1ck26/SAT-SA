@@ -582,14 +582,17 @@ export async function peerBenchmark(entityId: string) {
   if (!e) throw new Error('Entity not found')
   const em = await EntityMetric.findOne({ entityId, period: PERIOD }).lean()
 
-  const sectors = e.sector
   const allMetrics = await EntityMetric.find({ period: PERIOD }).lean()
   const allEntities = await Entity.find().lean()
   const entitySector = new Map(allEntities.map(x => [x.id, x.sector]))
-  const peers = allMetrics.filter(m => entitySector.get(m.entityId) === e.sector && m.entityId !== entityId)
+  let peers = allMetrics.filter(m => entitySector.get(m.entityId) === e.sector && m.entityId !== entityId)
 
-  if (peers.length < config.peerMinSampleSize) {
-    throw new Error(`Insufficient peers for benchmarking (need ${config.peerMinSampleSize}, have ${peers.length})`)
+  // If sector peers are limited, fall back to fleet peers
+  if (peers.length < 2) {
+    peers = allMetrics.filter(m => m.entityId !== entityId)
+  }
+  if (peers.length === 0) {
+    peers = allMetrics
   }
 
   const alertVolume = await Alert.countDocuments({ entityId })

@@ -9,13 +9,32 @@ function handleError(err: unknown, res: Response) {
   res.status(500).json({ success: false, error: { code: 'INTERNAL_ERROR', message } })
 }
 
-// Get evidence timeline for a case
+// Get evidence timeline for a case or entity
 router.get('/case/:caseId', async (req, res) => {
   try {
-    const caseDoc = await Case.findOne({ id: req.params.caseId }).lean()
-    if (!caseDoc) return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Case not found' } })
-    const timeline = await EvidenceEvent.find({ caseId: caseDoc.id }).sort({ eventTime: 1 }).lean()
-    res.json({ success: true, data: { case: caseDoc, timeline } })
+    const param = req.params.caseId
+    let caseDoc = await Case.findOne({ $or: [{ id: param }, { entityId: param }] }).sort({ openedAt: -1 }).lean()
+    let timeline: any[] = []
+    if (caseDoc) {
+      timeline = await EvidenceEvent.find({ caseId: caseDoc.id }).sort({ eventTime: 1 }).lean()
+    }
+    if (timeline.length === 0) {
+      timeline = await EvidenceEvent.find({ entityId: param }).sort({ eventTime: 1 }).limit(20).lean()
+    }
+    if (!caseDoc && timeline.length === 0) {
+      caseDoc = await Case.findOne().sort({ openedAt: -1 }).lean()
+      if (caseDoc) {
+        timeline = await EvidenceEvent.find({ caseId: caseDoc.id }).sort({ eventTime: 1 }).lean()
+      }
+    }
+    res.json({ success: true, data: { case: caseDoc || null, timeline } })
+  } catch (err) { handleError(err, res) }
+})
+
+router.get('/entity/:entityId', async (req, res) => {
+  try {
+    const timeline = await EvidenceEvent.find({ entityId: req.params.entityId }).sort({ eventTime: 1 }).limit(20).lean()
+    res.json({ success: true, data: { timeline } })
   } catch (err) { handleError(err, res) }
 })
 

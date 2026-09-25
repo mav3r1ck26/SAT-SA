@@ -55,7 +55,31 @@ router.get('/:id', async (req, res) => {
     const e = await Entity.findOne({ id: req.params.id }).lean()
     if (!e) return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Entity not found' } })
     const m = await EntityMetric.findOne({ entityId: e.id, period: 'Q2 FY 2026-27' }).lean()
-    res.json({ success: true, data: { ...e, metrics: m } })
+    res.json({
+      success: true,
+      data: {
+        ...e,
+        metrics: m,
+        riskScore: m?.riskScore ?? 50,
+        prevRiskScore: m?.prevRiskScore ?? 50,
+        executionGaps: m?.executionGapCount ?? 0,
+        negativeSpace: m?.negativeSpaceCount ?? 0,
+        peerDeviation: m?.peerDeviation ?? 'In Range',
+        priority: m?.priority ?? 'Normal',
+        status: e.assessmentStatus,
+        detection: m?.threatDetection ?? 50,
+        threatDetection: m?.threatDetection ?? 50,
+        investigation: m?.investigation ?? 50,
+        escalation: m?.escalation ?? 50,
+        incidentResponse: m?.incidentResponse ?? 50,
+        operations: m?.securityOperations ?? 50,
+        securityOperations: m?.securityOperations ?? 50,
+        governance: m?.governanceOversight ?? 50,
+        governanceOversight: m?.governanceOversight ?? 50,
+        resilience: m?.cyberResilience ?? 50,
+        cyberResilience: m?.cyberResilience ?? 50
+      }
+    })
   } catch (err) { handleError(err, res) }
 })
 

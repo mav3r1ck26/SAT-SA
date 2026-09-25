@@ -4,6 +4,23 @@ export default {
   theme: {
     extend: {
       colors: {
+        cyber: {
+          950: '#060a12',
+          900: '#0c1220',
+          850: '#11192c',
+          800: '#16223b',
+          750: '#1c2c4d',
+          700: '#23365f',
+          600: '#324c85',
+          500: '#4364ab',
+          400: '#5e85d4',
+          accent: '#00e5ff',
+          neonCyan: '#06b6d4',
+          neonEmerald: '#10b981',
+          neonRose: '#f43f5e',
+          neonAmber: '#f59e0b',
+          neonPurple: '#a855f7'
+        },
         navy: {
           50: '#f0f4f8',
           100: '#dce6f0',
@@ -16,7 +33,7 @@ export default {
           800: '#1a2f49',
           850: '#15263d',
           900: '#0f1f33',
-          950: '#0a1626'
+          950: '#091322'
         },
         charcoal: {
           50: '#f7f7f8',
@@ -32,8 +49,8 @@ export default {
           950: '#141418'
         },
         brand: {
-          DEFAULT: '#0f1f33',
-          accent: '#38bdf8'
+          DEFAULT: '#0c1220',
+          accent: '#06b6d4'
         }
       },
       fontFamily: {
@@ -45,8 +62,17 @@ export default {
         xl2: '0.875rem'
       },
       boxShadow: {
-        card: '0 1px 2px 0 rgb(15 23 42 / 0.05), 0 0 0 1px rgb(15 23 42 / 0.04)',
-        cardhover: '0 2px 6px 0 rgb(15 23 42 / 0.08), 0 0 0 1px rgb(15 23 42 / 0.06)'
+        card: '0 1px 3px 0 rgb(0 0 0 / 0.3), 0 0 0 1px rgb(255 255 255 / 0.05)',
+        cardhover: '0 4px 12px 0 rgb(0 0 0 / 0.4), 0 0 0 1px rgb(6 182 212 / 0.25)',
+        cyber: '0 4px 20px -2px rgba(6, 182, 212, 0.12), 0 0 0 1px rgba(6, 182, 212, 0.15)',
+        glowCyan: '0 0 15px -3px rgba(6, 182, 212, 0.35)',
+        'glow-cyan': '0 0 15px -3px rgba(6, 182, 212, 0.35)',
+        glowEmerald: '0 0 15px -3px rgba(16, 185, 129, 0.35)',
+        'glow-emerald': '0 0 15px -3px rgba(16, 185, 129, 0.35)',
+        glowRose: '0 0 15px -3px rgba(244, 63, 94, 0.35)',
+        'glow-rose': '0 0 15px -3px rgba(244, 63, 94, 0.35)',
+        glowAmber: '0 0 15px -3px rgba(245, 158, 11, 0.35)',
+        'glow-amber': '0 0 15px -3px rgba(245, 158, 11, 0.35)'
       }
     }
   },

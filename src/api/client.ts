@@ -6,7 +6,11 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
     ...options
   })
   if (!res.ok) throw new Error(`API error ${res.status}: ${await res.text()}`)
-  return res.json()
+  const json = await res.json()
+  if (json && typeof json === 'object' && 'data' in json) {
+    return json.data as T
+  }
+  return json as T
 }
 
 // ---- Entities ----

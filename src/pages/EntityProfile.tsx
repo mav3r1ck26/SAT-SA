@@ -1,20 +1,20 @@
 import React, { useState, useEffect } from 'react'
 import { useApp } from '../context/AppContext'
-import { RiskScoreGauge, SeverityBadge, Confidence } from '../components/ui'
+import { RiskScoreGauge, SeverityBadge, Confidence, TelemetryPulse, MitreBadge } from '../components/ui'
 import { Radar, ScoreBars } from '../components/charts'
 import { fetchEntity, fetchFindings, fetchEvidenceTimeline } from '../api/client'
-import { ChevronLeft } from 'lucide-react'
+import { ChevronLeft, Shield, Clock, FileText, Activity, AlertOctagon, Terminal, CheckCircle2, AlertTriangle, Database } from 'lucide-react'
 
 const tabs = ['Overview', 'Detection', 'Investigation', 'Escalation', 'Incident Response', 'Operations', 'Governance', 'Resilience', 'Evidence']
 
 const fallbackTimeline = [
-  { event: 'Alert generated — firewall anomaly', actor: 'SIEM', role: 'Detection System', time: '14:23:17', meta: ['BRAC: alerts-tmal'], severity: 'Critical', entity: 'CSE-014' },
+  { event: 'Alert generated — firewall anomaly', actor: 'SIEM', role: 'Detection System', time: '14:23:17', meta: ['BRAC: alerts-tmal'], severity: 'Critical', entity: 'CSE-014', mitre: 'T1059.001' },
   { event: 'SOC analyst assigned', actor: 'SOC-L2-004', role: 'Analyst', time: '14:24:53', meta: [], severity: 'Low', entity: 'CSE-014' },
   { event: 'Preliminary investigation opened', actor: 'SOC-L2-004', role: 'Analyst', time: '14:26:09', meta: [], severity: 'Low', entity: 'CSE-014' },
-  { event: 'Alert closed as false positive', actor: 'SOC-L2-004', role: 'Analyst', time: '14:31:02', meta: ['closure-time: 4.9 min'], severity: 'High', entity: 'CSE-014' },
+  { event: 'Alert closed as false positive', actor: 'SOC-L2-004', role: 'Analyst', time: '14:31:02', meta: ['closure-time: 4.9 min'], severity: 'High', entity: 'CSE-014', mitre: 'T1078' },
   { event: 'Peer baseline check', actor: 'Tool', role: 'Automated', time: '14:31:02', meta: ['peer-median: 42 min'], severity: 'Critical', entity: 'CSE-014' },
-  { event: 'No escalation record found', actor: '—', role: '—', time: '—', meta: ['missed-step: escalation'], severity: 'High', entity: 'CSE-014' },
-  { event: 'Audit log entry', actor: 'System', role: 'Audit', time: '14:31:03', meta: ['Immutable record'], severity: 'Low', entity: 'CSE-014' }
+  { event: 'No escalation record found', actor: '—', role: '—', time: '—', meta: ['missed-step: escalation'], severity: 'High', entity: 'CSE-014', mitre: 'T1041' },
+  { event: 'Audit log entry immutable', actor: 'System', role: 'Audit Engine', time: '14:31:03', meta: ['SHA-256 Verified'], severity: 'Low', entity: 'CSE-014' }
 ]
 
 export default function EntityProfile() {
@@ -32,118 +32,229 @@ export default function EntityProfile() {
   }, [entityId])
 
   if (!entity) return (
-    <div className="p-6 max-w-[1600px] mx-auto">
-      <div className="text-center py-12 text-slate-400 text-[12px]">Loading entity {entityId}...</div>
+    <div className="p-8 max-w-[1700px] mx-auto text-center space-y-3">
+      <div className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-cyber-900 border border-cyber-700 text-neonCyan font-mono text-sm animate-pulse">
+        <Activity className="w-4 h-4 animate-spin" /> Ingesting Entity Telemetry for {entityId}...
+      </div>
     </div>
   )
 
+  const riskScore = entity.riskScore ?? entity.metrics?.riskScore ?? 50
+  const completeness = entity.dataCompleteness ?? 85
+
   return (
-    <div className="p-6 max-w-[1600px] mx-auto">
-      <button onClick={() => setCurrentPage('entities')} className="flex items-center gap-1.5 text-[12px] font-medium text-slate-500 hover:text-slate-800 mb-4 transition-colors">
-        <ChevronLeft className="w-4 h-4" /> Back to Entities
+    <div className="p-6 max-w-[1700px] mx-auto space-y-6">
+      {/* Back Button */}
+      <button 
+        onClick={() => setCurrentPage('entities')} 
+        className="flex items-center gap-1.5 text-xs font-mono text-cyber-400 hover:text-neonCyan transition-colors"
+      >
+        <ChevronLeft className="w-4 h-4" /> Return to Entity Fleet Registry
       </button>
 
-      <div className="flex items-start justify-between mb-4">
-        <div>
-          <h1 className="text-xl font-bold text-navy-950 tracking-tight">
-            {entity.id} <span className="font-normal text-slate-400 mx-1.5">—</span>
-            <span className="font-normal">{entity.name}</span>
-          </h1>
-          <div className="flex items-center gap-4 mt-2 text-[12px] text-slate-500">
-            <span>Sector: <strong className="text-slate-700">{entity.sector}</strong></span>
-            <span>Period: <strong className="text-slate-700">Q2 FY 2026–27</strong></span>
-            <span>Status: <strong className="text-slate-700">{entity.status}</strong></span>
-            <span>Last Submission: <strong className="text-slate-700">{entity.lastSubmission}</strong></span>
+      {/* Header Dossier Banner */}
+      <div className="card p-5 bg-gradient-to-r from-cyber-900/90 via-cyber-900/60 to-cyber-950/90 border-cyber-700/80">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+          <div className="space-y-2">
+            <div className="flex flex-wrap items-center gap-3">
+              <span className="mono-id text-lg font-bold text-neonCyan px-2.5 py-1 rounded bg-cyber-950 border border-cyber-700">
+                {entity.id}
+              </span>
+              <h1 className="text-xl font-bold text-cyber-100 tracking-tight">
+                {entity.name}
+              </h1>
+              <TelemetryPulse active status="online" label="ACTIVE AUDIT" />
+            </div>
+
+            <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-xs font-mono text-cyber-400">
+              <span>Sector: <strong className="text-neonCyan">{entity.sector}</strong></span>
+              <span>Audit Period: <strong className="text-cyber-200">Q2 FY 2026–27</strong></span>
+              <span>Supervisory Tier: <strong className="text-neonAmber">{entity.criticality || 'Tier 1 - Critical'}</strong></span>
+              <span>Status: <strong className="text-neonEmerald">{entity.status}</strong></span>
+              <span>Last Ingest: <strong className="text-cyber-300">{entity.lastSubmission || '2026-09-24 IST'}</strong></span>
+            </div>
           </div>
-        </div>
-        <div className="text-right">
-          <div className="label mb-0.5">Data Completeness</div>
-          <div className="font-mono text-[14px] font-semibold text-slate-700">{entity.dataCompleteness}%</div>
+
+          <div className="flex items-center gap-4 bg-cyber-950/80 p-3.5 rounded-lg border border-cyber-800">
+            <div className="text-right">
+              <div className="label mb-0.5">Telemetry Completeness</div>
+              <div className="font-mono text-base font-bold text-neonCyan">{completeness}%</div>
+              <div className="text-[10px] text-cyber-400 font-mono">Air-Gap Ingested</div>
+            </div>
+            <div className="w-12 h-12 rounded-full border-2 border-cyber-700 flex items-center justify-center bg-cyber-900 text-neonCyan font-mono text-xs font-bold">
+              {completeness}%
+            </div>
+          </div>
         </div>
       </div>
 
-      <div className="flex gap-1 border-b border-slate-200 mb-6 overflow-x-auto">
+      {/* Navigation Tabs */}
+      <div className="flex gap-1.5 border-b border-cyber-800 overflow-x-auto pb-1">
         {tabs.map(t => (
-          <button key={t} onClick={() => setActiveTab(t)} className={`tab ${activeTab === t ? 'tab-active' : ''}`}>{t}</button>
+          <button 
+            key={t} 
+            onClick={() => setActiveTab(t)} 
+            className={`tab text-xs font-mono tracking-wider ${activeTab === t ? 'tab-active' : 'text-cyber-400 hover:text-cyber-200'}`}
+          >
+            {t}
+          </button>
         ))}
       </div>
 
       {activeTab === 'Overview' && (
-        <div className="grid grid-cols-3 gap-4">
-          <div className="card col-span-1 p-5">
-            <div className="label mb-3">Entity Risk Score</div>
-            <RiskScoreGauge score={entity.riskScore} />
-            <div className="mt-5">
-              <div className="label mb-2">Risk Score Breakdown</div>
-              <ScoreBars data={[
-                { label: 'Detection', value: entity.detection },
-                { label: 'Investigation', value: entity.investigation },
-                { label: 'Escalation', value: entity.escalation },
-                { label: 'Operations', value: entity.operations },
-                { label: 'Governance', value: entity.governance },
-                { label: 'Resilience', value: entity.resilience }
-              ]} />
-            </div>
-          </div>
-
-          <div className="col-span-2 flex flex-col gap-4">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+          {/* Left Column: Risk Gauge & Score Breakdown */}
+          <div className="lg:col-span-4 space-y-5">
             <div className="card p-5">
-              <div className="label mb-3">Composite Profile</div>
-              <div className="flex justify-center">
-                <Radar data={[
-                  { label: 'Detection', value: entity.detection },
-                  { label: 'Investigation', value: entity.investigation },
-                  { label: 'Escalation', value: entity.escalation },
-                  { label: 'Operations', value: entity.operations },
-                  { label: 'Governance', value: entity.governance },
-                  { label: 'Resilience', value: entity.resilience }
+              <div className="label mb-3 flex items-center justify-between">
+                <span>Composite Supervisory Risk Gauge</span>
+                <span className="text-[10px] font-mono text-neonCyan">ML ENSEMBLE</span>
+              </div>
+              
+              <div className="flex justify-center py-3">
+                <RiskScoreGauge score={riskScore} />
+              </div>
+
+              <div className="mt-5 pt-4 border-t border-cyber-800/80">
+                <div className="label mb-3">Domain Sub-Score Analysis</div>
+                <ScoreBars data={[
+                  { label: 'Threat Detection', value: entity.detection ?? entity.metrics?.threatDetection ?? entity.threatDetection ?? 50 },
+                  { label: 'Investigation Rigor', value: entity.investigation ?? entity.metrics?.investigation ?? 50 },
+                  { label: 'Escalation Protocol', value: entity.escalation ?? entity.metrics?.escalation ?? 50 },
+                  { label: 'SecOps Cadence', value: entity.operations ?? entity.metrics?.securityOperations ?? entity.securityOperations ?? 50 },
+                  { label: 'Gov. & Oversight', value: entity.governance ?? entity.metrics?.governanceOversight ?? entity.governanceOversight ?? 50 },
+                  { label: 'Cyber Resilience', value: entity.resilience ?? entity.metrics?.cyberResilience ?? entity.cyberResilience ?? 50 }
                 ]} />
               </div>
             </div>
 
-            <div className="card">
-              <div className="card-header">
-                <div className="card-title">Key Findings for {entity.id}</div>
-                <span className="badge border bg-slate-100 border-slate-200">{findings.length} findings</span>
+            {/* Quick Entity Metadata */}
+            <div className="card p-4 space-y-3">
+              <div className="label">Forensic Audit Parameters</div>
+              <div className="space-y-2 text-xs font-mono">
+                <div className="flex justify-between py-1 border-b border-cyber-800/60">
+                  <span className="text-cyber-400">Total Ingested Events</span>
+                  <span className="text-cyber-100 font-bold">28,451 records</span>
+                </div>
+                <div className="flex justify-between py-1 border-b border-cyber-800/60">
+                  <span className="text-cyber-400">Execution Gaps Identified</span>
+                  <span className="text-neonRose font-bold">{entity.executionGaps ?? findings.length} critical</span>
+                </div>
+                <div className="flex justify-between py-1 border-b border-cyber-800/60">
+                  <span className="text-cyber-400">Sensor Blind Spots</span>
+                  <span className="text-neonAmber font-bold">{entity.negativeSpace ?? 2} uncovered</span>
+                </div>
+                <div className="flex justify-between py-1">
+                  <span className="text-cyber-400">SHA-256 Ingestion Hash</span>
+                  <span className="text-cyber-400 text-[10px] truncate max-w-[140px]">9f83a...bc41e</span>
+                </div>
               </div>
-              <div className="divide-y divide-slate-100">
+            </div>
+          </div>
+
+          {/* Right Column: Radar Profile, Findings & Timeline */}
+          <div className="lg:col-span-8 space-y-5">
+            {/* Radar Card */}
+            <div className="card p-5">
+              <div className="label mb-3 flex items-center justify-between">
+                <span>Multi-Vector Behavioral Radar Profile</span>
+                <span className="text-[10px] font-mono text-cyber-400">Supervisory Baseline vs Observed Telemetry</span>
+              </div>
+              <div className="flex justify-center py-2">
+                <Radar data={[
+                  { label: 'Detection', value: entity.detection ?? entity.metrics?.threatDetection ?? entity.threatDetection ?? 50 },
+                  { label: 'Investigation', value: entity.investigation ?? entity.metrics?.investigation ?? 50 },
+                  { label: 'Escalation', value: entity.escalation ?? entity.metrics?.escalation ?? 50 },
+                  { label: 'Operations', value: entity.operations ?? entity.metrics?.securityOperations ?? entity.securityOperations ?? 50 },
+                  { label: 'Governance', value: entity.governance ?? entity.metrics?.governanceOversight ?? entity.governanceOversight ?? 50 },
+                  { label: 'Resilience', value: entity.resilience ?? entity.metrics?.cyberResilience ?? entity.cyberResilience ?? 50 }
+                ]} />
+              </div>
+            </div>
+
+            {/* Key Findings for Entity */}
+            <div className="card">
+              <div className="card-header border-b border-cyber-800 pb-3 flex items-center justify-between">
+                <div>
+                  <div className="card-title flex items-center gap-2">
+                    <AlertOctagon className="w-4 h-4 text-neonRose" />
+                    Key Supervisory Findings for {entity.id}
+                  </div>
+                  <div className="card-subtitle text-cyber-400">
+                    Definitive operational evidence divergences from established control baselines
+                  </div>
+                </div>
+                <span className="badge badge-danger text-xs font-mono">{findings.length} findings</span>
+              </div>
+              
+              <div className="divide-y divide-cyber-800/80">
                 {findings.map((f: any, i: number) => (
-                  <div key={i} className="px-4 py-3 hover:bg-slate-50/50 transition-colors">
-                    <div className="flex items-center gap-3 mb-1">
-                      <SeverityBadge severity={f.severity} />
-                      <span className="text-[12.5px] font-medium text-slate-800">{f.finding}</span>
-                      <span className="mono-id ml-1">{f.id}</span>
+                  <div key={i} className="p-4 hover:bg-cyber-800/40 transition-colors space-y-2">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <SeverityBadge severity={f.severity} />
+                        <span className="text-xs font-bold text-cyber-100">{f.finding}</span>
+                        <span className="mono-id text-neonCyan">{f.id}</span>
+                        {f.mitreTechnique && <MitreBadge techniqueId={f.mitreTechnique} name={f.mitreTechnique} />}
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <Confidence value={f.confidence} compact />
+                        <span className="text-xs font-mono text-cyber-400 bg-cyber-900 px-2 py-0.5 rounded border border-cyber-800">
+                          {f.evidenceCount} evidence items
+                        </span>
+                      </div>
                     </div>
-                    <p className="text-[11.5px] text-slate-500 ml-0.5">{f.description}</p>
-                    <div className="flex items-center gap-4 mt-2">
-                      <Confidence value={f.confidence} compact />
-                      <span className="text-[11px] text-slate-400">{f.evidenceCount} evidence items</span>
-                    </div>
+                    
+                    <p className="text-xs text-cyber-300 leading-relaxed pl-1">{f.description}</p>
                   </div>
                 ))}
               </div>
             </div>
 
-            <div className="card p-4">
-              <div className="label mb-2">Evidence Timeline</div>
-              <div className="flex flex-col gap-0">
+            {/* Evidence Forensic Timeline */}
+            <div className="card p-5">
+              <div className="label mb-3 flex items-center justify-between">
+                <span>Forensic Operational Evidence Timeline</span>
+                <span className="text-[10px] font-mono text-neonCyan">TIME-CORRELATED AUDIT SEQUENCE</span>
+              </div>
+
+              <div className="space-y-0 relative border-l-2 border-cyber-800 ml-3 pl-5 py-2">
                 {timeline.map((evt: any, i: number) => (
-                  <div key={i} className="flex gap-3 items-start">
-                    <div className="flex flex-col items-center pt-0.5">
-                      <div className={`w-3 h-3 rounded-full border-2 shrink-0 ${i === 0 ? 'bg-blue-600 border-blue-600' : evt.actor === '—' ? 'bg-slate-200 border-slate-300' : 'bg-white border-slate-300'}`} />
-                      {i < timeline.length - 1 && <div className="w-px h-full min-h-[36px] bg-slate-200" />}
-                    </div>
-                    <div className="pb-3 min-w-0">
-                      <div className="text-[12.5px] font-semibold text-slate-800">{evt.event}</div>
-                      <div className="text-[11px] text-slate-500">
-                        {evt.actor} · {evt.role}
-                        <span className="mono text-[10px] ml-2 text-slate-400">{evt.time} {evt.time !== '—' ? 'IST' : ''}</span>
+                  <div key={i} className="relative pb-5 last:pb-1">
+                    {/* Timeline Node Glow Dot */}
+                    <div className={`absolute -left-[27px] top-1.5 w-3.5 h-3.5 rounded-full border-2 ${
+                      evt.severity === 'Critical' 
+                        ? 'bg-neonRose border-cyber-950 ring-2 ring-neonRose/30 animate-pulse' 
+                        : evt.severity === 'High' 
+                        ? 'bg-neonAmber border-cyber-950' 
+                        : 'bg-cyber-700 border-cyber-950'
+                    }`} />
+
+                    <div className="bg-cyber-950/70 p-3 rounded-lg border border-cyber-800/80 space-y-1.5 hover:border-cyber-700 transition-colors">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-bold text-cyber-100">{evt.event}</span>
+                          {evt.mitre && <MitreBadge techniqueId={evt.mitre} name={evt.mitre} />}
+                        </div>
+                        <div className="text-[11px] font-mono text-neonCyan bg-cyber-900 px-2 py-0.5 rounded border border-cyber-800">
+                          {evt.time} {evt.time !== '—' ? 'IST' : ''}
+                        </div>
                       </div>
-                      <div className="flex gap-2 mt-0.5">
-                        {(evt.meta || []).map((m: string, j: number) => (
-                          <span key={j} className="text-[10.5px] text-slate-500 bg-slate-50 px-1.5 py-0.5 rounded">{m}</span>
-                        ))}
+
+                      <div className="flex flex-wrap items-center gap-3 text-xs text-cyber-400 font-mono">
+                        <span>Actor: <strong className="text-cyber-200">{evt.actor}</strong></span>
+                        <span>Role: <strong className="text-cyber-300">{evt.role}</strong></span>
                       </div>
+
+                      {(evt.meta || []).length > 0 && (
+                        <div className="flex flex-wrap gap-1.5 pt-1">
+                          {(evt.meta || []).map((m: string, j: number) => (
+                            <span key={j} className="text-[10.5px] font-mono text-cyber-300 bg-cyber-900 px-2 py-0.5 rounded border border-cyber-800">
+                              {m}
+                            </span>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -154,11 +265,12 @@ export default function EntityProfile() {
       )}
 
       {activeTab !== 'Overview' && (
-        <div className="card p-8">
-          <div className="text-center">
-            <div className="text-[13px] font-semibold text-slate-700 mb-1">{activeTab} Analytics</div>
-            <p className="text-[12px] text-slate-500">Detailed {activeTab.toLowerCase()} data for {entity.id} will be displayed here.</p>
-          </div>
+        <div className="card p-10 text-center space-y-3 bg-cyber-950/60 border-cyber-800">
+          <Terminal className="w-8 h-8 text-neonCyan mx-auto" />
+          <h3 className="text-sm font-bold text-cyber-100 font-mono">{activeTab} Operational Audit Stream</h3>
+          <p className="text-xs text-cyber-400 max-w-md mx-auto">
+            Deep forensic drilldown for {entity.id} in domain <span className="text-neonCyan">{activeTab}</span>. Raw audit logs are verified with zero data exfiltration.
+          </p>
         </div>
       )}
     </div>

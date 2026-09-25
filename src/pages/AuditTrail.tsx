@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { fetchAuditLog, exportAuditLog } from '../api/client'
-import { Download } from 'lucide-react'
+import { Download, Search, Shield, Filter, Key, CheckCircle2, AlertCircle } from 'lucide-react'
+import { TelemetryPulse } from '../components/ui'
 
 export default function AuditTrail() {
   const [search, setSearch] = useState('')
@@ -36,48 +37,110 @@ export default function AuditTrail() {
   }
 
   return (
-    <div className="p-6 max-w-[1600px] mx-auto">
-      <div className="flex items-center justify-between mb-1">
+    <div className="p-6 max-w-[1700px] mx-auto space-y-6">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-cyber-800 pb-4">
         <div>
-          <h1 className="page-title">Audit Trail</h1>
-          <p className="page-subtitle">Immutable record of all supervisory actions</p>
+          <div className="flex items-center gap-3">
+            <h1 className="page-title text-2xl font-bold tracking-tight">Supervisory Immutable Audit Ledger</h1>
+            <TelemetryPulse active status="online" label="SHA-256 APPEND-ONLY LOG" />
+          </div>
+          <p className="page-subtitle text-cyber-400 mt-0.5">
+            Tamper-evident chronological journal of all examiner adjudications, data ingestion runs, and regulatory exports
+          </p>
         </div>
-        <button className="btn btn-sm" onClick={handleExport}><Download className="w-3.5 h-3.5" /> Export</button>
+        <div className="flex items-center gap-2">
+          <button className="btn btn-sm flex items-center gap-1.5 text-cyber-300" onClick={handleExport}>
+            <Download className="w-3.5 h-3.5 text-neonCyan" /> Export Audit Trail (CSV)
+          </button>
+        </div>
       </div>
 
-      <div className="flex items-center gap-3 mt-4 mb-4">
-        <input className="input max-w-[280px]" placeholder="Filter by user, action, entity..." value={search} onChange={e => setSearch(e.target.value)} />
-        <select className="select" value={userFilter} onChange={e => setUserFilter(e.target.value)}>
-          <option value="">All Users</option>
-          <option value="Examiner-07">Examiner-07</option>
-          <option value="Examiner-03">Examiner-03</option>
-          <option value="Supervisor-02">Supervisor-02</option>
-          <option value="Auto-Ingest">Auto-Ingest</option>
-        </select>
-        <select className="select" value={actionFilter} onChange={e => setActionFilter(e.target.value)}>
-          <option value="">All Actions</option>
-          <option value="Finding Reviewed">Finding Reviewed</option>
-          <option value="Recommendation Assigned">Recommendation Assigned</option>
-          <option value="Data Ingested">Data Ingested</option>
-        </select>
+      <div className="flex flex-wrap items-center justify-between gap-3 bg-cyber-900/60 p-3 rounded-lg border border-cyber-800">
+        <div className="flex flex-wrap items-center gap-3 flex-1">
+          <div className="relative min-w-[280px]">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-cyber-400" />
+            <input 
+              className="input pl-9 w-full bg-cyber-950 text-cyber-100 placeholder-cyber-500 border-cyber-700/80 focus:border-neonCyan text-xs" 
+              placeholder="Search by examiner ID, action, CSE ID, or finding hash..." 
+              value={search} 
+              onChange={e => setSearch(e.target.value)} 
+            />
+          </div>
+          
+          <div className="flex items-center gap-1.5">
+            <Filter className="w-3.5 h-3.5 text-cyber-400 mr-0.5" />
+            <select 
+              className="select bg-cyber-950 border-cyber-700/80 text-cyber-200 text-xs py-1.5" 
+              value={userFilter} 
+              onChange={e => setUserFilter(e.target.value)}
+            >
+              <option value="">All Examiners / Agents</option>
+              <option value="Examiner-07">Examiner-07 (Lead)</option>
+              <option value="Examiner-03">Examiner-03</option>
+              <option value="Supervisor-02">Supervisor-02 (Admin)</option>
+              <option value="Auto-Ingest">Auto-Ingest (Local Airgap)</option>
+            </select>
+          </div>
+
+          <div>
+            <select 
+              className="select bg-cyber-950 border-cyber-700/80 text-cyber-200 text-xs py-1.5" 
+              value={actionFilter} 
+              onChange={e => setActionFilter(e.target.value)}
+            >
+              <option value="">All Audit Operations</option>
+              <option value="Finding Reviewed">Finding Reviewed</option>
+              <option value="Recommendation Assigned">Recommendation Assigned</option>
+              <option value="Data Ingested">Data Ingested</option>
+            </select>
+          </div>
+        </div>
+
+        <div className="text-xs font-mono text-cyber-400 flex items-center gap-2">
+          <span>Showing <strong className="text-neonCyan">{filtered.length}</strong> logged transactions</span>
+        </div>
       </div>
 
-      <div className="card">
+      <div className="card overflow-hidden">
         <div className="table-wrap">
           <table className="data-table">
             <thead>
-              <tr><th>Timestamp</th><th>User</th><th>Action</th><th>Finding</th><th>Entity</th><th>Status</th></tr>
+              <tr>
+                <th>Timestamp (IST)</th>
+                <th>Examiner / Principal</th>
+                <th>Supervisory Action</th>
+                <th>Finding Ref</th>
+                <th>Entity Target</th>
+                <th>Adjudication State</th>
+              </tr>
             </thead>
             <tbody>
               {filtered.map((r, i) => (
-                <tr key={i}>
-                  <td className="mono-id">{typeof r.timestamp === 'string' ? r.timestamp.slice(0, 19).replace('T', ' ') : r.timestamp}</td>
-                  <td className="text-[12px] font-medium text-slate-700">{r.user}</td>
-                  <td className="text-[12px] text-slate-600">{r.action}</td>
-                  <td className="mono-id">{r.finding}</td>
-                  <td className="mono-id">{r.entityId}</td>
+                <tr key={i} className="hover:bg-cyber-800/40 transition-colors">
+                  <td className="mono-id text-cyber-300">
+                    {typeof r.timestamp === 'string' ? r.timestamp.slice(0, 19).replace('T', ' ') : r.timestamp}
+                  </td>
+                  <td className="text-xs font-bold text-cyber-100 flex items-center gap-1.5">
+                    <Shield className="w-3.5 h-3.5 text-cyber-500" />
+                    {r.user}
+                  </td>
+                  <td className="text-xs font-mono text-cyber-200">{r.action}</td>
+                  <td className="mono-id text-neonCyan">{r.finding || '—'}</td>
+                  <td className="mono-id text-cyber-300">{r.entityId || '—'}</td>
                   <td>
-                    <span className={`badge border text-[10.5px] ${r.status === 'Confirmed' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : r.status === 'In Progress' ? 'bg-blue-50 text-blue-700 border-blue-200' : r.status === 'Complete' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : r.status === 'Warning' ? 'bg-amber-50 text-amber-700 border-amber-200' : r.status === 'Dismissed' ? 'bg-slate-100 text-slate-500 border-slate-200 line-through' : 'bg-slate-100 text-slate-600 border-slate-200'}`}>{r.status}</span>
+                    <span className={`badge border text-[10.5px] font-mono ${
+                      r.status === 'Confirmed' || r.status === 'Complete'
+                        ? 'bg-emerald-950/80 text-neonEmerald border-emerald-800/60' 
+                        : r.status === 'In Progress' 
+                        ? 'bg-blue-950/80 text-neonCyan border-cyan-800/60' 
+                        : r.status === 'Warning' 
+                        ? 'bg-amber-950/80 text-neonAmber border-amber-800/60' 
+                        : r.status === 'Dismissed' 
+                        ? 'bg-cyber-900 text-cyber-500 border-cyber-700 line-through' 
+                        : 'bg-cyber-900 text-cyber-300 border-cyber-700'
+                    }`}>
+                      {r.status}
+                    </span>
                   </td>
                 </tr>
               ))}

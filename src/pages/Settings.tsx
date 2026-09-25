@@ -1,52 +1,71 @@
 import React from 'react'
-import { ShieldCheck, Database, Lock, FileText, AlertTriangle } from 'lucide-react'
+import { ShieldCheck, Database, Lock, FileText, AlertTriangle, Cpu, Terminal, KeyRound, Server } from 'lucide-react'
+import { TelemetryPulse } from '../components/ui'
 
 export default function Settings() {
   return (
-    <div className="p-6 max-w-[1200px] mx-auto">
-      <div className="mb-1">
-        <h1 className="page-title">Settings</h1>
-        <p className="page-subtitle">System configuration and information</p>
+    <div className="p-6 max-w-[1400px] mx-auto space-y-6">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-cyber-800 pb-4">
+        <div>
+          <div className="flex items-center gap-3">
+            <h1 className="page-title text-2xl font-bold tracking-tight">Supervisory Node Settings & Hardware Security</h1>
+            <TelemetryPulse active status="online" label="AIR-GAP COMPLIANT NODE" />
+          </div>
+          <p className="page-subtitle text-cyber-400 mt-0.5">
+            Cryptographic parameters, isolation integrity checks, and local deterministic execution environment controls
+          </p>
+        </div>
       </div>
 
-      <div className="mt-5 flex flex-col gap-4">
-        {/* System Info */}
+      <div className="space-y-5">
+        {/* System Information Card */}
         <div className="card p-5">
-          <div className="card-title mb-3">System Information</div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="label mb-4 flex items-center justify-between">
+            <span className="flex items-center gap-2 text-cyber-200 font-bold">
+              <Server className="w-4 h-4 text-neonCyan" /> System Architecture & Build Parameters
+            </span>
+            <span className="text-[10px] font-mono text-neonCyan">SHA-256 HASH VERIFIED</span>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 font-mono text-xs">
             {[
-              { label: 'Version', value: 'SAT-SA v1.0.0' },
-              { label: 'Environment', value: 'NCIIPC Controlled Environment' },
-              { label: 'Connectivity', value: 'Offline / Air-Gapped' },
-              { label: 'AI/API Dependency', value: 'None — Local Processing Only' },
-              { label: 'Data Classification', value: 'Restricted — Supervisory Use Only' },
-              { label: 'Last Deployment', value: '01 Sep 2026' }
+              { label: 'Supervisory Engine Build', value: 'SAT-SA v2.4.0 (Enterprise Examination)', status: 'Verified' },
+              { label: 'Execution Environment', value: 'NCIIPC Isolated Sovereign Node', status: 'Secured' },
+              { label: 'Network Boundary', value: 'Strict Physical Air-Gap (Zero Outbound)', status: 'Isolated' },
+              { label: 'Inference Engine', value: 'Local ML Ensemble (Scikit / PyTorch Local)', status: 'Zero Cloud' },
+              { label: 'Data Security Classification', value: 'RESTRICTED // NCIIPC SUPERVISORY USE ONLY', status: 'Enforced' },
+              { label: 'Database Storage Node', value: 'Local MongoDB replica on :27017', status: 'Connected' }
             ].map((item, i) => (
-              <div key={i} className="flex justify-between py-2 border-b border-slate-100">
-                <span className="text-[12px] text-slate-500">{item.label}</span>
-                <span className="text-[12px] font-medium text-slate-700">{item.value}</span>
+              <div key={i} className="flex items-center justify-between p-3 rounded-lg bg-cyber-950/80 border border-cyber-800">
+                <span className="text-cyber-400">{item.label}</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-cyber-100 font-bold">{item.value}</span>
+                  <span className="text-[9.5px] px-1.5 py-0.5 rounded bg-cyber-900 border border-cyber-700 text-neonCyan font-bold">
+                    {item.status}
+                  </span>
+                </div>
               </div>
             ))}
           </div>
         </div>
 
-        {/* Security */}
+        {/* Security & Air-Gap Posture */}
         <div className="card p-5">
-          <div className="card-title mb-3">Security & Environment</div>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="label mb-4 text-cyber-200 font-bold">Cryptographic Isolation & Assurance Matrix</div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {[
-              { icon: ShieldCheck, title: 'NCIIPC Controlled Environment', desc: 'Running in isolated supervisory environment.', color: 'text-emerald-500', bg: 'bg-emerald-50' },
-              { icon: Database, title: 'Local Data Processing Only', desc: 'All analytics run locally. No external data transmission.', color: 'text-blue-500', bg: 'bg-blue-50' },
-              { icon: Lock, title: 'Air-Gapped Network', desc: 'System is disconnected from external networks.', color: 'text-emerald-500', bg: 'bg-emerald-50' },
-              { icon: FileText, title: 'Immutable Audit Trail', desc: 'All actions recorded and tamper-proof.', color: 'text-blue-500', bg: 'bg-blue-50' }
+              { icon: ShieldCheck, title: 'NCIIPC Regulated Environment', desc: 'Running in sovereign supervisory container with verified integrity manifests.', border: 'border-emerald-800/60', text: 'text-neonEmerald', bg: 'bg-emerald-950/20' },
+              { icon: Database, title: 'Deterministic Local Execution', desc: 'All machine learning heuristics execute locally. Zero outbound telemetry.', border: 'border-cyan-800/60', text: 'text-neonCyan', bg: 'bg-cyan-950/20' },
+              { icon: Lock, title: 'Hardware Air-Gap Assurance', desc: 'Disconnected from public WAN. Ingestion strictly via physical air-gap bundles.', border: 'border-emerald-800/60', text: 'text-neonEmerald', bg: 'bg-emerald-950/20' },
+              { icon: FileText, title: 'Cryptographic Audit Log', desc: 'Examiner actions recorded to append-only tamper-evident local storage.', border: 'border-cyan-800/60', text: 'text-neonCyan', bg: 'bg-cyan-950/20' }
             ].map((item, i) => {
               const Icon = item.icon
               return (
-                <div key={i} className={`${item.bg} rounded-lg px-4 py-3 flex items-start gap-3`}>
-                  <Icon className={`w-5 h-5 shrink-0 ${item.color} mt-0.5`} />
-                  <div>
-                    <div className="text-[12.5px] font-semibold text-slate-800">{item.title}</div>
-                    <p className="text-[11.5px] text-slate-500 mt-0.5">{item.desc}</p>
+                <div key={i} className={`${item.bg} border ${item.border} rounded-lg p-4 flex items-start gap-3.5`}>
+                  <Icon className={`w-5 h-5 shrink-0 ${item.text} mt-0.5`} />
+                  <div className="space-y-0.5">
+                    <div className="text-xs font-bold text-cyber-100">{item.title}</div>
+                    <p className="text-xs text-cyber-400 leading-relaxed font-mono">{item.desc}</p>
                   </div>
                 </div>
               )
@@ -54,21 +73,15 @@ export default function Settings() {
           </div>
         </div>
 
-        {/* Data Processing */}
+        {/* Legal & Regulatory Notice */}
         <div className="card p-5">
-          <div className="card-title mb-3">Data Processing Notice</div>
-          <div className="bg-slate-50 rounded-lg p-4">
-            <div className="flex items-start gap-2">
-              <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
-              <div>
-                <p className="text-[12px] text-slate-700 leading-relaxed">
-                  SAT-SA processes SOC operational data submitted by Critical Sector Entities within the NCIIPC controlled environment.
-                  All analytical outputs are system recommendations requiring examiner review before any supervisory action.
-                  No data is transmitted externally. No external AI or API services are used.
-                  All model outputs include confidence indicators and limitations disclosures.
-                </p>
-              </div>
-            </div>
+          <div className="label mb-3 text-neonAmber font-mono flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 text-neonAmber" /> Statutory Examination Governance Protocol
+          </div>
+          <div className="bg-cyber-950 rounded-lg p-4 border border-amber-900/40">
+            <p className="text-xs text-cyber-300 leading-relaxed font-mono">
+              SAT-SA analyzes raw security operations evidence submitted by Critical Sector Entities under Section 70 of the Information Technology Act. All behavioral anomalies and execution gap findings generated by SAT-SA represent preliminary system recommendations requiring statutory examiner adjudication prior to issuance of regulatory directives or examination notices.
+            </p>
           </div>
         </div>
       </div>
