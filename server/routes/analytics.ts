@@ -3,7 +3,7 @@ import {
   overviewKPIs, riskDistribution, detectExecutionGaps, detectBlindSpots,
   escalationAnalytics, alertAnalytics, investigationAnalytics, peerBenchmark,
   generateReviewQueue, recomputeAllRisks, persistFindings,
-  detectAnomalies, assessDataQuality
+  detectAnomalies, assessDataQuality, telemetryCoverageMatrix
 } from '../services/analytics'
 
 const router = Router()
@@ -56,6 +56,12 @@ router.get('/gaps', async (req, res) => {
 // Negative space / blind spots
 router.get('/blind-spots', async (req, res) => {
   try { res.json({ success: true, data: await detectBlindSpots(req.query.entityId?.toString()) }) }
+  catch (err) { handleError(err, res) }
+})
+
+// Dynamic Telemetry Coverage Matrix
+router.get('/coverage-matrix', async (req, res) => {
+  try { res.json({ success: true, data: await telemetryCoverageMatrix(req.query.entityId?.toString()) }) }
   catch (err) { handleError(err, res) }
 })
 

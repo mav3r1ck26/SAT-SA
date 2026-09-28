@@ -1,0 +1,54 @@
+[
+  {
+    "entityId": "CSE-014",
+    "entityName": "Central Power Authority",
+    "sector": "Power",
+    "assetGroup": "OT/ICS SCADA Segment",
+    "mitreTactic": "Lateral Movement & Inhibit Response",
+    "expectedTelemetry": "Full Modbus/DNP3 Deep Packet Inspection & RTU Syslog",
+    "observedTelemetry": "Edge Firewall NetFlow only (Packet payload stripped)",
+    "coveragePct": 38,
+    "blindSpotSeverity": "Critical",
+    "statutoryImpact": "Violation of NCIIPC Rule 8.2 (Continuous Industrial Control Telemetry)",
+    "auditRecommendation": "Deploy air-gapped passive industrial network TAP sensors across Substation Bus 1 & 2."
+  },
+  {
+    "entityId": "CSE-014",
+    "entityName": "Central Power Authority",
+    "sector": "Power",
+    "assetGroup": "Identity & Kerberos Domain Controllers",
+    "mitreTactic": "Credential Access (T1003) & Privilege Escalation",
+    "expectedTelemetry": "Microsoft Defender for Identity + Windows Event 4624/4672/4768/4769",
+    "observedTelemetry": "Basic Event 4624 only (Kerberos ticket requests unlogged)",
+    "coveragePct": 54,
+    "blindSpotSeverity": "High",
+    "statutoryImpact": "Inability to detect Golden Ticket & Overpass-the-Hash attacks",
+    "auditRecommendation": "Enable Advanced Audit Policy Configuration for Kerberos Authentication Service."
+  },
+  {
+    "entityId": "CSE-027",
+    "entityName": "National Banking Services",
+    "sector": "Banking",
+    "assetGroup": "SWIFT Alliance Lite2 Gateway",
+    "mitreTactic": "Defense Evasion & Exfiltration (T1041)",
+    "expectedTelemetry": "Encrypted HSM Session Audit, File Integrity Monitoring on /swift/bin",
+    "observedTelemetry": "OS Heartbeat ping only",
+    "coveragePct": 42,
+    "blindSpotSeverity": "Critical",
+    "statutoryImpact": "RBI Cyber Security Framework Mandate Section 4 (Critical Banking Systems Integrity)",
+    "auditRecommendation": "Install kernel-level eBPF integrity agent on SWIFT Linux appliances."
+  },
+  {
+    "entityId": "CSE-063",
+    "entityName": "Metropolitan Water Board",
+    "sector": "Water",
+    "assetGroup": "Chemical Dosing PLC Network",
+    "mitreTactic": "Impact (T0831 - Manipulation of Control)",
+    "expectedTelemetry": "Serial RS-485 Bus Monitoring & Water Quality Sensor Thresholds",
+    "observedTelemetry": "Manual paper log entry once per 12 hours",
+    "coveragePct": 28,
+    "blindSpotSeverity": "Critical",
+    "statutoryImpact": "Zero real-time telemetry for chemical treatment facilities",
+    "auditRecommendation": "Integrate IoT Modbus-to-Syslog converter gateways across all 4 water treatment nodes."
+  }
+]

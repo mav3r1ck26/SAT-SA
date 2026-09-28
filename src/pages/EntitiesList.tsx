@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { useApp } from '../context/AppContext'
 import { fetchEntities } from '../api/client'
 import { StatusBadge, RiskScoreBar, TelemetryPulse } from '../components/ui'
-import { Search, Download, Shield, Filter, Database, ArrowUpDown, ChevronRight } from 'lucide-react'
+import { Search, Download, Shield, Filter, ArrowUpDown, ChevronRight } from 'lucide-react'
 
 export default function EntitiesList() {
   const { setCurrentPage, setSelectedEntity } = useApp()
@@ -14,19 +14,28 @@ export default function EntitiesList() {
   const [sortAsc, setSortAsc] = useState(false)
 
   useEffect(() => {
-    const params: Record<string, string> = {}
-    if (sectorFilter) params.sector = sectorFilter
-    if (criticalityFilter) params.criticality = criticalityFilter
-    fetchEntities(Object.keys(params).length ? params : undefined).then(setEntities).catch(() => setEntities([]))
-  }, [sectorFilter, criticalityFilter])
+    fetchEntities().then(setEntities).catch(() => setEntities([]))
+  }, [])
 
   const openEntity = (id: string) => { 
     setSelectedEntity(id)
     setCurrentPage('entity') 
   }
 
+  // Dynamically extract real sectors & criticalities from the database
+  const availableSectors = Array.from(new Set(entities.map(e => e.sector))).filter(Boolean).sort()
+  const availableCriticalities = Array.from(new Set(entities.map(e => e.criticality))).filter(Boolean).sort()
+
   const filtered = entities
-    .filter(e => !search || e.id.toLowerCase().includes(search.toLowerCase()) || (e.name || '').toLowerCase().includes(search.toLowerCase()) || (e.sector || '').toLowerCase().includes(search.toLowerCase()))
+    .filter(e => {
+      const matchesSearch = !search || 
+        e.id.toLowerCase().includes(search.toLowerCase()) || 
+        (e.name || '').toLowerCase().includes(search.toLowerCase()) || 
+        (e.sector || '').toLowerCase().includes(search.toLowerCase())
+      const matchesSector = !sectorFilter || e.sector === sectorFilter
+      const matchesCriticality = !criticalityFilter || e.criticality === criticalityFilter
+      return matchesSearch && matchesSector && matchesCriticality
+    })
     .sort((a: any, b: any) => {
       const dir = sortAsc ? 1 : -1
       if (typeof a[sortKey] === 'string') return (a[sortKey] || '').localeCompare(b[sortKey] || '') * dir
@@ -35,15 +44,15 @@ export default function EntitiesList() {
 
   const cols = [
     { key: 'id', label: 'Entity Identifier' }, 
-    { key: 'name', label: 'Entity Legal Name' }, 
+    { key: 'name', label: 'Legal Entity Name' }, 
     { key: 'sector', label: 'Critical Sector' },
     { key: 'criticality', label: 'Supervisory Tier' }, 
     { key: 'riskScore', label: 'Risk Score (0-100)' },
     { key: 'dataCompleteness', label: 'Data Fidelity' },
     { key: 'executionGaps', label: 'Gaps' }, 
     { key: 'negativeSpace', label: 'Blind Spots' },
-    { key: 'priority', label: 'Exam Priority' }, 
-    { key: 'status', label: 'Audit Status' }
+    { key: 'priority', label: 'Priority' }, 
+    { key: 'status', label: 'Status' }
   ]
   
   const toggleSort = (k: string) => { 
@@ -51,46 +60,77 @@ export default function EntitiesList() {
     else { setSortKey(k); setSortAsc(false) } 
   }
 
+  // Functional CSV export
+  const exportFleetCSV = () => {
+    const headers = ['Entity ID', 'Legal Name', 'Sector', 'Criticality', 'Risk Score', 'Data Fidelity %', 'Execution Gaps', 'Blind Spots', 'Priority', 'Audit Status']
+    const rows = filtered.map(e => [
+      e.id,
+      `"${e.name}"`,
+      e.sector,
+      e.criticality,
+      e.riskScore ?? e.metrics?.riskScore ?? 0,
+      e.dataCompleteness ?? 0,
+      e.executionGaps ?? 0,
+      e.negativeSpace ?? 0,
+      e.priority ?? 'Normal',
+      e.status ?? 'Compliant'
+    ])
+    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(r => r.join(','))].join('\n')
+    const encodedUri = encodeURI(csvContent)
+    const link = document.createElement('a')
+    link.setAttribute('href', encodedUri)
+    link.setAttribute('download', `SAT-SA_Fleet_Registry_${new Date().toISOString().slice(0, 10)}.csv`)
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+  }
+
   return (
     <div className="p-6 max-w-[1700px] mx-auto space-y-5">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-cyber-800 pb-4">
+      {/* Header Banner */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-stone-200 pb-4">
         <div>
           <div className="flex items-center gap-3">
-            <h1 className="page-title text-2xl font-bold tracking-tight">Critical Sector Entities Fleet</h1>
-            <TelemetryPulse active status="online" label={`${entities.length} CSEs REGISTRY`} />
+            <h1 className="page-title text-xl font-bold tracking-tight text-slate-900">Critical Sector Entities Fleet</h1>
+            <TelemetryPulse active status="online" label={`${entities.length} CSEs REGISTERED`} />
           </div>
-          <p className="page-subtitle text-cyber-400 mt-0.5">
+          <p className="page-subtitle text-slate-400 text-xs mt-0.5">
             Designated supervisory universe under National Cyber Infrastructure Protection Examination Framework
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <button className="btn btn-sm flex items-center gap-1.5 text-cyber-300">
-            <Download className="w-3.5 h-3.5 text-neonCyan" /> Export Fleet Inventory (CSV)
+          <button 
+            onClick={exportFleetCSV}
+            className="btn btn-sm flex items-center gap-1.5 text-slate-700 hover:text-slate-900"
+            title="Download full CSV list of entities"
+          >
+            <Download className="w-3.5 h-3.5 text-indigo-600" /> Export Fleet (CSV)
           </button>
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center justify-between gap-3 bg-cyber-900/60 p-3 rounded-lg border border-cyber-800">
+      {/* Filter and Search Bar */}
+      <div className="flex flex-wrap items-center justify-between gap-3 bg-stone-50 p-3 rounded-lg border border-stone-200">
         <div className="flex flex-wrap items-center gap-3 flex-1">
           <div className="relative min-w-[280px]">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-cyber-400" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
             <input 
-              className="input pl-9 w-full bg-cyber-950/80 text-cyber-100 placeholder-cyber-500 border-cyber-700/80 focus:border-neonCyan text-xs" 
-              placeholder="Search by CSE ID, organization name, or critical sector..." 
+              className="input pl-9 w-full bg-white text-slate-800 placeholder-slate-500 border-stone-200 focus:border-indigo-200 text-xs" 
+              placeholder="Search by CSE ID, organization name, or sector..." 
               value={search} 
               onChange={e => setSearch(e.target.value)} 
             />
           </div>
           
           <div className="flex items-center gap-1.5">
-            <Filter className="w-3.5 h-3.5 text-cyber-400 mr-0.5" />
+            <Filter className="w-3.5 h-3.5 text-slate-400 mr-0.5" />
             <select 
-              className="select bg-cyber-950/80 border-cyber-700/80 text-cyber-200 text-xs py-1.5" 
+              className="select bg-white border-stone-200 text-slate-700 text-xs py-1.5" 
               value={sectorFilter} 
               onChange={e => setSectorFilter(e.target.value)}
             >
               <option value="">All Sectors ({entities.length})</option>
-              {['Banking & Finance','Power & Energy','Telecommunications','Civil Aviation','Nuclear','Defence & Strategic','Railways','Health & Pharma'].map(s => (
+              {availableSectors.map(s => (
                 <option key={s} value={s}>{s}</option>
               ))}
             </select>
@@ -98,23 +138,33 @@ export default function EntitiesList() {
 
           <div>
             <select 
-              className="select bg-cyber-950/80 border-cyber-700/80 text-cyber-200 text-xs py-1.5" 
+              className="select bg-white border-stone-200 text-slate-700 text-xs py-1.5" 
               value={criticalityFilter} 
               onChange={e => setCriticalityFilter(e.target.value)}
             >
-              <option value="">All Criticality Tiers</option>
-              {['Tier 1 - Critical','Tier 2 - High','Tier 3 - Medium','Tier 4 - Low','Critical','High','Medium','Low'].map(c => (
+              <option value="">All Supervisory Tiers</option>
+              {availableCriticalities.map(c => (
                 <option key={c} value={c}>{c}</option>
               ))}
             </select>
           </div>
+
+          {(search || sectorFilter || criticalityFilter) && (
+            <button
+              onClick={() => { setSearch(''); setSectorFilter(''); setCriticalityFilter('') }}
+              className="text-xs font-mono text-indigo-600 hover:underline px-2 py-1"
+            >
+              Clear filters
+            </button>
+          )}
         </div>
 
-        <div className="text-xs font-mono text-cyber-400 flex items-center gap-2">
-          <span>Showing <strong className="text-neonCyan">{filtered.length}</strong> of {entities.length} entities</span>
+        <div className="text-xs font-mono text-slate-400 flex items-center gap-2">
+          <span>Showing <strong className="text-indigo-600">{filtered.length}</strong> of {entities.length} entities</span>
         </div>
       </div>
 
+      {/* Fleet Table */}
       <div className="card overflow-hidden">
         <div className="table-wrap">
           <table className="data-table">
@@ -123,16 +173,16 @@ export default function EntitiesList() {
                 {cols.map(c => (
                   <th 
                     key={c.key} 
-                    className="cursor-pointer select-none hover:text-neonCyan transition-colors" 
+                    className="cursor-pointer select-none hover:text-indigo-600 transition-colors" 
                     onClick={() => toggleSort(c.key)}
                   >
                     <div className="flex items-center gap-1.5">
                       <span>{c.label}</span>
-                      <ArrowUpDown className={`w-3 h-3 ${sortKey === c.key ? 'text-neonCyan' : 'text-cyber-600'}`} />
+                      <ArrowUpDown className={`w-3 h-3 ${sortKey === c.key ? 'text-indigo-600' : 'text-slate-600'}`} />
                     </div>
                   </th>
                 ))}
-                <th className="text-right">Examination</th>
+                <th className="text-right">Action</th>
               </tr>
             </thead>
             <tbody>
@@ -142,52 +192,59 @@ export default function EntitiesList() {
                 return (
                   <tr 
                     key={e.id} 
-                    className="cursor-pointer hover:bg-cyber-800/50 transition-colors" 
+                    className="cursor-pointer hover:bg-stone-100 transition-colors" 
                     onClick={() => openEntity(e.id)}
                   >
-                    <td className="mono-id text-neonCyan font-bold">
+                    <td className="font-mono text-indigo-600 font-bold">
                       <div className="flex items-center gap-1.5">
-                        <Shield className="w-3.5 h-3.5 text-cyber-400" />
-                        {e.id}
+                        <Shield className="w-3.5 h-3.5 text-slate-400" />
+                        <span>{e.id}</span>
                       </div>
                     </td>
-                    <td className="text-xs font-semibold text-cyber-100">{e.name}</td>
+                    <td className="text-xs font-medium text-slate-700">{e.name}</td>
                     <td>
-                      <span className="px-2 py-0.5 rounded text-[11px] font-mono bg-cyber-900 border border-cyber-700/60 text-cyber-300">
+                      <span className="px-2 py-0.5 rounded text-[11px] font-mono bg-stone-50 border border-stone-200 text-slate-600">
                         {e.sector}
                       </span>
                     </td>
                     <td><StatusBadge status={e.criticality || 'Critical'} /></td>
-                    <td className="min-w-[160px]">
+                    <td className="min-w-[150px]">
                       <RiskScoreBar score={score} showLabel />
                     </td>
                     <td>
                       <div className="flex items-center gap-2">
-                        <div className="w-16 h-1.5 rounded-full bg-cyber-800 overflow-hidden">
+                        <div className="w-16 h-1.5 rounded-full bg-stone-200 overflow-hidden">
                           <div 
-                            className={`h-full rounded-full ${completeness > 80 ? 'bg-neonEmerald' : completeness > 60 ? 'bg-neonAmber' : 'bg-neonRose'}`}
+                            className={`h-full rounded-full ${completeness > 80 ? 'bg-emerald-400' : completeness > 60 ? 'bg-amber-400' : 'bg-rose-400'}`}
                             style={{ width: `${completeness}%` }}
                           />
                         </div>
-                        <span className="font-mono text-[11px] text-cyber-300">{completeness}%</span>
+                        <span className="font-mono text-[11px] text-slate-600">{completeness}%</span>
                       </div>
                     </td>
-                    <td className="font-mono text-xs text-cyber-200 text-center font-bold">
+                    <td className="font-mono text-xs text-slate-700 text-center font-bold">
                       {e.executionGaps ?? 0}
                     </td>
-                    <td className="font-mono text-xs text-cyber-300 text-center">
+                    <td className="font-mono text-xs text-slate-400 text-center">
                       {e.negativeSpace ?? 0}
                     </td>
                     <td><StatusBadge status={e.priority} /></td>
                     <td><StatusBadge status={e.status} /></td>
                     <td className="text-right">
-                      <button className="text-[11.5px] font-mono text-neonCyan hover:text-cyber-100 flex items-center gap-1 ml-auto">
+                      <button className="text-[11.5px] font-mono text-indigo-600 hover:underline flex items-center gap-1 ml-auto">
                         Dossier <ChevronRight className="w-3.5 h-3.5" />
                       </button>
                     </td>
                   </tr>
                 )
               })}
+              {filtered.length === 0 && (
+                <tr>
+                  <td colSpan={11} className="text-center py-10 text-xs text-slate-400 font-mono">
+                    No matching critical sector entities found. Try adjusting your search query or filters.
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>

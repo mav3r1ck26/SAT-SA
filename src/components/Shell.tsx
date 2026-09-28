@@ -1,74 +1,109 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import {
-  LayoutDashboard, Building2, ShieldAlert, CircleDot, ScanSearch, Bell,
-  FolderSearch, GitBranch, ArrowUpRight, Scale, ListTodo, FileSearch2,
-  FileText, Upload, BadgeCheck, History, Settings as SettingsIcon, Search,
-  HelpCircle, User, ChevronDown, ShieldCheck, AlertTriangle, Info, Zap,
-  Activity, Radio, Terminal, Lock, Clock
+  LayoutDashboard, Building2, CircleDot, ScanSearch, Bell,
+  ListTodo, FileText, Upload, Settings as SettingsIcon, Search,
+  ShieldCheck, AlertTriangle, Database, Clock, ChevronDown, Check, X,
+  Radio, HardDrive, Shield, Sparkles, UserCheck, ArrowUpRight
 } from 'lucide-react'
 import { useApp } from '../context/AppContext'
-import { notifications } from '../data/mockData'
+import { notifications as initialNotifications } from '../data/mockData'
 
 interface NavItem {
   id: string
   label: string
+  description: string
   icon: React.ComponentType<{ className?: string }>
   badge?: string
+  badgeColor?: string
 }
 
+// 7 Focused Primary Supervisory Capabilities
 const primaryNav: NavItem[] = [
-  { id: 'overview', label: 'Supervisory Overview', icon: LayoutDashboard },
-  { id: 'entities', label: 'Entities Fleet', icon: Building2 },
-  { id: 'risk', label: 'Supervisory Risk', icon: ShieldAlert },
-  { id: 'gaps', label: 'Execution Gaps', icon: CircleDot, badge: 'Active' },
-  { id: 'negative', label: 'Negative Space Matrix', icon: ScanSearch }
+  { 
+    id: 'overview', 
+    label: 'Command Overview', 
+    description: 'Attention Index & Fleet Ranking', 
+    icon: LayoutDashboard 
+  },
+  { 
+    id: 'entities', 
+    label: 'Entity Assessment', 
+    description: 'CSE Scorecards & Peer Benchmarks', 
+    icon: Building2 
+  },
+  { 
+    id: 'gaps', 
+    label: 'Execution Gaps', 
+    description: 'Behavioral vs Stated Capability', 
+    icon: CircleDot, 
+    badge: 'Behavioral',
+    badgeColor: 'bg-rose-50 text-rose-600 border border-rose-200'
+  },
+  { 
+    id: 'negative', 
+    label: 'Negative Space', 
+    description: 'Sensor Blind Spots & Missing Data', 
+    icon: ScanSearch, 
+    badge: 'Dark Spots',
+    badgeColor: 'bg-amber-50 text-amber-600 border border-amber-200'
+  },
+  { 
+    id: 'prioritisation', 
+    label: 'Review Queue', 
+    description: 'Manual Sampling & Evidence Chain', 
+    icon: ListTodo, 
+    badge: 'Prioritised',
+    badgeColor: 'bg-indigo-50 text-indigo-600 border border-indigo-200'
+  },
+  { 
+    id: 'ingestion', 
+    label: 'Data Ingestion', 
+    description: 'Air-Gap Bundles & Test Datasets', 
+    icon: Upload 
+  },
+  { 
+    id: 'reports', 
+    label: 'Reports & Governance', 
+    description: 'Dossiers, Audit Ledger & ML Specs', 
+    icon: FileText 
+  }
 ]
 
-const analyticsNav: NavItem[] = [
-  { id: 'alerts', label: 'Alert Analytics', icon: Bell },
-  { id: 'investigation', label: 'Investigation Analytics', icon: FolderSearch },
-  { id: 'escalation', label: 'Escalation Bottlenecks', icon: GitBranch },
-  { id: 'benchmarking', label: 'Peer Benchmarking', icon: ArrowUpRight },
-  { id: 'prioritisation', label: 'Review Prioritisation', icon: ListTodo, badge: 'ML' },
-  { id: 'evidence', label: 'Evidence Explorer', icon: FileSearch2 }
+const searchCatalog = [
+  { type: 'entity', id: 'CSE-001', name: 'National Power Grid Op.', sector: 'Power' },
+  { type: 'entity', id: 'CSE-008', name: 'State Telecom Network', sector: 'Telecom' },
+  { type: 'entity', id: 'CSE-014', name: 'Central Power Authority (Critical Anomaly)', sector: 'Power' },
+  { type: 'entity', id: 'CSE-021', name: 'Regional Transport Alliance', sector: 'Transport' },
+  { type: 'entity', id: 'CSE-027', name: 'National Banking Services (SWIFT)', sector: 'Banking' },
+  { type: 'entity', id: 'CSE-034', name: 'Renewable Energy Group', sector: 'Energy' },
+  { type: 'entity', id: 'CSE-041', name: 'Central Defence Data Ctr', sector: 'Defence' },
+  { type: 'entity', id: 'CSE-050', name: 'Govt Digital Services', sector: 'Government' },
+  { type: 'entity', id: 'CSE-058', name: 'National Health Net', sector: 'Health' },
+  { type: 'entity', id: 'CSE-063', name: 'Metropolitan Water Board', sector: 'Water' },
+  { type: 'entity', id: 'CSE-070', name: 'Freight Rail Network', sector: 'Transport' },
+  { type: 'finding', id: 'EG-181', name: 'Rapid Closure Without Investigation (<5m)', sector: 'CSE-014' },
+  { type: 'finding', id: 'EG-182', name: 'Critical Alert Without Escalation', sector: 'CSE-014' },
+  { type: 'finding', id: 'EG-183', name: 'Repeated Template Investigation Disposition', sector: 'CSE-027' },
+  { type: 'finding', id: 'NS-186', name: 'Missing Telemetry from OT/ICS SCADA Bus', sector: 'CSE-014' },
+  { type: 'module', id: 'overview', name: 'Command Overview (Fleet Attention Index)', sector: 'Module' },
+  { type: 'module', id: 'entities', name: 'Entity Assessment & Peer Benchmarking', sector: 'Module' },
+  { type: 'module', id: 'gaps', name: 'Execution Gap Divergence Registry', sector: 'Module' },
+  { type: 'module', id: 'negative', name: 'Negative Space & Sensor Blind Spots', sector: 'Module' },
+  { type: 'module', id: 'prioritisation', name: 'Examiner Manual Review Queue & Evidence', sector: 'Module' },
+  { type: 'module', id: 'ingestion', name: 'Air-Gap Telemetry Ingestion & QC', sector: 'Module' },
+  { type: 'module', id: 'reports', name: 'Supervisory Dossiers, Audit & Governance', sector: 'Module' }
 ]
-
-const governanceNav: NavItem[] = [
-  { id: 'reports', label: 'Supervisory Dossiers', icon: FileText },
-  { id: 'ingestion', label: 'Data Ingestion & QC', icon: Upload },
-  { id: 'validation', label: 'Model Ground Truth', icon: BadgeCheck },
-  { id: 'audit', label: 'Immutable Audit Trail', icon: History },
-  { id: 'settings', label: 'System Configuration', icon: SettingsIcon }
-]
-
-function NavLink({ item, active, onClick }: { item: NavItem; active: boolean; onClick: () => void }) {
-  const Icon = item.icon
-  return (
-    <button
-      onClick={onClick}
-      className={`w-full flex items-center justify-between rounded-lg px-3 py-2 text-left text-[12.5px] font-medium transition-all group ${
-        active
-          ? 'bg-gradient-to-r from-cyan-500/15 to-transparent text-cyan-300 border-l-2 border-cyan-400 font-semibold'
-          : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800/50 border-l-2 border-transparent'
-      }`}
-    >
-      <div className="flex items-center gap-2.5 truncate">
-        <Icon className={`w-4 h-4 shrink-0 transition-colors ${active ? 'text-cyan-400 drop-shadow-[0_0_8px_rgba(6,182,212,0.6)]' : 'text-slate-400 group-hover:text-slate-200'}`} />
-        <span className="truncate tracking-tight">{item.label}</span>
-      </div>
-      {item.badge && (
-        <span className={`text-[9.5px] font-mono px-1.5 py-0.5 rounded ${active ? 'bg-cyan-400/20 text-cyan-200 border border-cyan-400/30' : 'bg-slate-800 text-slate-400 border border-slate-700/50'}`}>
-          {item.badge}
-        </span>
-      )}
-    </button>
-  )
-}
 
 export default function Shell({ children }: { children: React.ReactNode }) {
-  const { currentPage, setCurrentPage, selectedEntity, setSelectedEntity, assessmentPeriod, setAssessmentPeriod } = useApp()
+  const { currentPage, setCurrentPage, setSelectedEntity, assessmentPeriod, setAssessmentPeriod } = useApp()
   const [showNotifications, setShowNotifications] = useState(false)
+  const [showPeriodMenu, setShowPeriodMenu] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [searchFocused, setSearchFocused] = useState(false)
+  const [notifications, setNotifications] = useState(initialNotifications)
   const [timeString, setTimeString] = useState('')
+  const searchRef = useRef<HTMLDivElement>(null)
+
   const unreadCount = notifications.filter(n => !n.read).length
 
   useEffect(() => {
@@ -81,178 +116,267 @@ export default function Shell({ children }: { children: React.ReactNode }) {
     return () => clearInterval(t)
   }, [])
 
+  // Close search dropdown on click outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (searchRef.current && !searchRef.current.contains(e.target as Node)) {
+        setSearchFocused(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
+
+  // Global shortcut ⌘K / Ctrl+K
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault()
+        setSearchFocused(true)
+      } else if (e.key === 'Escape') {
+        setSearchFocused(false)
+        setShowNotifications(false)
+        setShowPeriodMenu(false)
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [])
+
   const navigate = (id: string) => {
     setCurrentPage(id)
     if (id === 'entities') setSelectedEntity(null)
+    setSearchFocused(false)
+    setSearchQuery('')
   }
 
-  const groupTitle = (label: string) => (
-    <div className="px-3 pt-4 pb-1.5">
-      <span className="text-[10px] font-semibold uppercase tracking-widest text-slate-400 font-mono flex items-center gap-1.5">
-        <span className="w-1.5 h-1.5 rounded-sm bg-slate-600" />
-        {label}
-      </span>
-    </div>
-  )
+  const handleSearchResultClick = (item: typeof searchCatalog[0]) => {
+    if (item.type === 'entity') {
+      setSelectedEntity(item.id)
+      setCurrentPage('entity')
+    } else if (item.type === 'finding') {
+      setCurrentPage('gaps')
+    } else if (item.type === 'module') {
+      navigate(item.id)
+    }
+    setSearchFocused(false)
+    setSearchQuery('')
+  }
+
+  const markAllRead = () => {
+    setNotifications(prev => prev.map(n => ({ ...n, read: true })))
+  }
+
+  const periods = ['Q2 FY 2026–27', 'Q1 FY 2026–27', 'Q4 FY 2025–26', 'Q3 FY 2025–26']
+
+  const filteredSearchResults = searchQuery.trim()
+    ? searchCatalog.filter(item =>
+        item.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        item.sector.toLowerCase().includes(searchQuery.toLowerCase())
+      ).slice(0, 8)
+    : searchCatalog.slice(0, 6)
+
+  // Map sub-pages to their active parent nav item
+  const getActiveNavId = () => {
+    if (currentPage === 'entity') return 'entities'
+    if (currentPage === 'evidence') return 'prioritisation'
+    if (currentPage === 'audit' || currentPage === 'validation' || currentPage === 'settings') return 'reports'
+    if (currentPage === 'benchmarking' || currentPage === 'alerts' || currentPage === 'investigation' || currentPage === 'escalation') return 'entities'
+    return currentPage
+  }
+
+  const activeNavId = getActiveNavId()
 
   return (
-    <div className="flex h-screen overflow-hidden bg-[#060a12] text-slate-100">
-      {/* Sidebar */}
-      <aside className="w-[240px] shrink-0 bg-[#0a101f]/95 backdrop-blur-md text-slate-300 flex flex-col border-r border-slate-800/90 z-20">
+    <div className="flex h-screen overflow-hidden bg-stone-50 text-slate-700 font-sans">
+      {/* Streamlined Dark Sidebar */}
+      <aside className="w-[200px] shrink-0 bg-slate-800 text-slate-200 flex flex-col border-r border-slate-700 z-20">
         {/* Brand Header */}
-        <div className="px-4 py-3.5 border-b border-slate-800/80 flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center shrink-0 shadow-glowCyan border border-cyan-300/30">
-              <ShieldCheck className="w-5 h-5 text-slate-950 font-bold" />
+        <div className="px-4 py-3.5 border-b border-slate-700 flex items-center justify-between">
+          <div className="flex items-center gap-2.5 cursor-pointer" onClick={() => navigate('overview')}>
+            <div className="w-8 h-8 rounded-lg bg-indigo-500/20 border border-indigo-400/40 flex items-center justify-center shrink-0 text-indigo-300 shadow-sm">
+              <ShieldCheck className="w-4 h-4" />
             </div>
-            <div>
-              <div className="text-[14px] font-bold text-white tracking-wider leading-none font-mono flex items-center gap-1.5">
-                SAT-SA
-                <span className="text-[9px] font-normal px-1 py-0.2 rounded bg-cyan-950 text-cyan-400 border border-cyan-800/50">v1.0</span>
-              </div>
-              <div className="text-[9.5px] text-slate-400 mt-0.5 font-medium tracking-tight">Supervisory Analytics</div>
-            </div>
-          </div>
-        </div>
-
-        {/* Navigation */}
-        <nav className="flex-1 overflow-y-auto px-2 py-2 space-y-0.5">
-          {groupTitle('Analysis & Intelligence')}
-          {primaryNav.map(item => (
-            <NavLink
-              key={item.id}
-              item={item}
-              active={currentPage === item.id}
-              onClick={() => navigate(item.id)}
-            />
-          ))}
-          {groupTitle('Operational Analytics')}
-          {analyticsNav.map(item => (
-            <NavLink
-              key={item.id}
-              item={item}
-              active={currentPage === item.id}
-              onClick={() => navigate(item.id)}
-            />
-          ))}
-          {groupTitle('Supervisory Governance')}
-          {governanceNav.map(item => (
-            <NavLink
-              key={item.id}
-              item={item}
-              active={currentPage === item.id}
-              onClick={() => navigate(item.id)}
-            />
-          ))}
-        </nav>
-
-        {/* Security Posture Status */}
-        <div className="p-3 border-t border-slate-800/90 bg-[#080d1a]/80">
-          <div className="p-2.5 rounded-lg bg-slate-900/90 border border-slate-800">
-            <div className="flex items-center justify-between mb-1.5">
-              <div className="flex items-center gap-2">
-                <span className="soc-pulse">
-                  <span className="soc-pulse-ring bg-emerald-400" />
-                  <span className="soc-pulse-dot bg-emerald-500" />
-                </span>
-                <span className="text-[10.5px] font-bold text-slate-200 font-mono tracking-wide">SECURE AIR-GAP</span>
-              </div>
-              <span className="text-[9px] font-mono text-emerald-400 bg-emerald-950/60 px-1.5 py-0.5 rounded border border-emerald-800/40">ONLINE</span>
-            </div>
-            <div className="text-[10px] text-slate-400 font-mono space-y-0.5">
-              <div className="flex justify-between">
-                <span>NCIIPC Local DB</span>
-                <span className="text-slate-300">Connected</span>
-              </div>
-              <div className="flex justify-between">
-                <span>ML Pipeline</span>
-                <span className="text-cyan-400">Ensemble</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </aside>
-
-      {/* Main Container */}
-      <div className="flex-1 flex flex-col min-w-0">
-        {/* Top Command Bar */}
-        <header className="h-[54px] shrink-0 bg-[#0a101f]/90 backdrop-blur-md border-b border-slate-800/90 flex items-center justify-between px-5 z-10">
-          <div className="flex items-center gap-3">
-            {/* Classification Badge */}
-            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-amber-950/40 border border-amber-600/40 text-amber-300 font-mono text-[10.5px] font-semibold tracking-wider">
-              <Lock className="w-3 h-3 text-amber-400" />
-              <span>RESTRICTED // NCIIPC SUPERVISORY</span>
-            </div>
-
-            {/* Assessment Period */}
-            <div className="flex items-center gap-1.5 bg-[#080d1a] border border-slate-800 rounded-lg px-2.5 py-1.5 text-[11.5px] hover:border-slate-700 cursor-pointer transition-colors">
-              <span className="text-slate-500 font-mono text-[10px] uppercase font-semibold">Period:</span>
-              <span className="font-semibold text-slate-200 font-mono">{assessmentPeriod}</span>
-            </div>
-          </div>
-
-          {/* Center Search / Command Palette */}
-          <div className="flex-1 max-w-[420px] mx-4">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500" />
-              <input
-                className="w-full bg-[#080d1a]/90 border border-slate-800 rounded-lg pl-9 pr-14 py-1.5 text-[12px] text-slate-200 placeholder-slate-500 focus:outline-none focus:border-cyan-500/70 focus:ring-1 focus:ring-cyan-500/20 font-mono transition-all"
-                placeholder="Search CSEs, alerts, gap findings, case IDs..."
-              />
-              <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] font-mono text-slate-500 bg-slate-800/80 px-1.5 py-0.5 rounded border border-slate-700">
-                ⌘K
+            <div className="text-[13.5px] font-bold text-white tracking-wide font-mono flex items-center gap-1.5">
+              SAT-SA
+              <span className="text-[9.5px] font-semibold px-1.5 py-0.2 rounded bg-indigo-900/80 text-indigo-300 border border-indigo-700/60">
+                NCIIPC
               </span>
             </div>
           </div>
+        </div>
 
-          {/* Right System Info & User */}
-          <div className="flex items-center gap-3">
-            {/* Clock */}
-            <div className="hidden lg:flex items-center gap-1.5 font-mono text-[11px] text-slate-400 bg-[#080d1a] px-2.5 py-1 rounded-lg border border-slate-800">
-              <Clock className="w-3.5 h-3.5 text-cyan-400" />
-              <span className="text-slate-200 font-semibold">{timeString || '18:40:00 IST'}</span>
+        {/* 7 Streamlined Primary Nav Items */}
+        <nav className="flex-1 overflow-y-auto px-2.5 py-4 space-y-1">
+          <div className="px-2 pb-2 text-[9.5px] font-bold uppercase tracking-wider text-slate-400 font-mono">
+            Supervisory Capabilities
+          </div>
+
+          {primaryNav.map(item => {
+            const Icon = item.icon
+            const active = activeNavId === item.id
+            return (
+              <button
+                key={item.id}
+                onClick={() => navigate(item.id)}
+                className={`w-full flex items-center gap-3 rounded-lg px-3 py-2 text-left transition-all group ${
+                  active
+                    ? 'bg-slate-700/60 text-white font-medium border-l-2 border-indigo-400'
+                    : 'text-slate-300 hover:text-white hover:bg-slate-700/40 border-l-2 border-transparent'
+                }`}
+              >
+                <Icon className={`w-4 h-4 shrink-0 transition-colors ${active ? 'text-indigo-400' : 'text-slate-400 group-hover:text-slate-200'}`} />
+                <span className={`text-[12.5px] truncate ${active ? 'text-white' : 'text-slate-300 group-hover:text-white'}`}>
+                  {item.label}
+                </span>
+              </button>
+            )
+          })}
+        </nav>
+      </aside>
+
+      {/* Main Workspace Area */}
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        {/* Top Header Bar */}
+        <header className="h-14 shrink-0 border-b border-stone-200 bg-white px-5 flex items-center justify-between gap-4 z-10">
+          {/* Universal Search & Jump Box */}
+          <div className="relative flex-1 max-w-md" ref={searchRef}>
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+              <input
+                type="text"
+                placeholder="Search entities, findings..."
+                value={searchQuery}
+                onFocus={() => setSearchFocused(true)}
+                onChange={e => setSearchQuery(e.target.value)}
+                className="w-full rounded-lg bg-stone-100 border border-stone-300 pl-9 pr-12 py-1.5 text-xs text-slate-900 placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 font-mono transition-colors"
+              />
+              <kbd className="absolute right-2.5 top-1/2 -translate-y-1/2 px-1.5 py-0.5 text-[10px] font-mono text-slate-500 bg-white rounded border border-stone-300">
+                ⌘K
+              </kbd>
             </div>
 
-            {/* Notifications */}
+            {/* Fast Search Results Popover */}
+            {searchFocused && (
+              <div className="absolute top-full left-0 right-0 mt-1.5 bg-white border border-stone-200 rounded-lg shadow-lg p-2 z-50 space-y-1 max-h-80 overflow-y-auto">
+                <div className="text-[10px] font-mono text-slate-500 px-2 py-1 uppercase tracking-wider flex items-center justify-between">
+                  <span>Direct Supervisory Catalog</span>
+                  <span>{filteredSearchResults.length} matches</span>
+                </div>
+                {filteredSearchResults.map((item, idx) => (
+                  <button
+                    key={idx}
+                    onClick={() => handleSearchResultClick(item)}
+                    className="w-full flex items-center justify-between p-2 rounded hover:bg-stone-50 text-left text-xs transition-colors group"
+                  >
+                    <div className="flex items-center gap-2 truncate">
+                      <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded border uppercase ${
+                        item.type === 'entity' 
+                          ? 'bg-indigo-50 text-indigo-700 border-indigo-200' 
+                          : item.type === 'finding'
+                          ? 'bg-rose-50 text-rose-700 border-rose-200'
+                          : 'bg-stone-50 text-slate-600 border-stone-200'
+                      }`}>
+                        {item.type}
+                      </span>
+                      <span className="mono-id">{item.id}</span>
+                      <span className="text-slate-700 truncate font-sans">{item.name}</span>
+                    </div>
+                    <span className="text-[10.5px] font-mono text-slate-400 group-hover:text-slate-600 shrink-0">
+                      {item.sector}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Right Header Controls */}
+          <div className="flex items-center gap-3">
+            {/* Assessment Period Dropdown */}
             <div className="relative">
               <button
-                className="relative p-2 rounded-lg bg-[#080d1a] border border-slate-800 hover:border-slate-700 hover:text-white transition-colors text-slate-300"
-                onClick={() => setShowNotifications(v => !v)}
+                onClick={() => setShowPeriodMenu(!showPeriodMenu)}
+                className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white border border-stone-200 text-xs font-mono text-slate-700 hover:border-stone-300 transition-colors"
+              >
+                <Clock className="w-3.5 h-3.5 text-indigo-500" />
+                <span>{assessmentPeriod}</span>
+                <ChevronDown className="w-3 h-3 text-slate-400" />
+              </button>
+
+              {showPeriodMenu && (
+                <div className="absolute right-0 top-full mt-1.5 w-44 bg-white border border-stone-200 rounded-lg shadow-lg p-1 z-50">
+                  <div className="px-2 py-1 text-[10px] font-mono text-slate-500 uppercase">Audit Assessment Period</div>
+                  {periods.map(p => (
+                    <button
+                      key={p}
+                      onClick={() => { setAssessmentPeriod(p); setShowPeriodMenu(false) }}
+                      className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded text-xs font-mono text-left ${
+                        assessmentPeriod === p ? 'bg-indigo-50 text-indigo-700 font-bold' : 'text-slate-700 hover:bg-stone-50'
+                      }`}
+                    >
+                      <span>{p}</span>
+                      {assessmentPeriod === p && <Check className="w-3.5 h-3.5 text-indigo-600" />}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Notifications Flyout */}
+            <div className="relative">
+              <button
+                onClick={() => setShowNotifications(!showNotifications)}
+                className="relative p-2 rounded-lg bg-white border border-stone-200 hover:border-stone-300 text-slate-600 hover:text-slate-900 transition-colors"
+                title="Supervisory Notifications"
               >
                 <Bell className="w-4 h-4" />
                 {unreadCount > 0 && (
-                  <span className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-rose-500 text-white text-[9.5px] font-mono font-bold flex items-center justify-center shadow-glowRose">
+                  <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-rose-600 text-white text-[9px] font-bold flex items-center justify-center font-mono animate-pulse">
                     {unreadCount}
                   </span>
                 )}
               </button>
 
               {showNotifications && (
-                <div className="absolute right-0 top-full mt-2 w-[380px] bg-[#0c1324] rounded-xl border border-slate-800 shadow-2xl z-50 overflow-hidden">
-                  <div className="px-4 py-3 border-b border-slate-800 flex items-center justify-between bg-slate-900/50">
-                    <span className="text-[12.5px] font-semibold text-white flex items-center gap-2">
-                      <Bell className="w-3.5 h-3.5 text-cyan-400" />
-                      Supervisory Alerts
+                <div className="absolute right-0 top-full mt-2 w-80 bg-white border border-stone-200 rounded-lg shadow-lg p-3 z-50 space-y-2">
+                  <div className="flex items-center justify-between border-b border-stone-200 pb-2">
+                    <span className="text-xs font-bold text-slate-900 font-mono flex items-center gap-1.5">
+                      <Bell className="w-3.5 h-3.5 text-indigo-500" /> Supervisory Alerts ({unreadCount})
                     </span>
-                    <span className="text-[10.5px] font-mono text-slate-400">{unreadCount} pending</span>
+                    <button onClick={markAllRead} className="text-[10px] text-indigo-600 hover:underline font-mono">
+                      Mark read
+                    </button>
                   </div>
-                  <div className="max-h-[360px] overflow-y-auto divide-y divide-slate-800/50">
+
+                  <div className="space-y-1.5 max-h-64 overflow-y-auto">
                     {notifications.map(n => (
-                      <div key={n.id} className={`p-3.5 hover:bg-slate-800/40 transition-colors border-l-2 ${n.read ? 'border-transparent' : 'border-cyan-500 bg-cyan-950/10'}`}>
-                        <div className="flex items-start gap-2.5">
-                          <div className="mt-0.5 shrink-0">
-                            {n.severity === 'high'
-                              ? <AlertTriangle className="w-4 h-4 text-rose-400" />
-                              : n.severity === 'medium'
-                                ? <Info className="w-4 h-4 text-amber-400" />
-                                : <Info className="w-4 h-4 text-cyan-400" />}
-                          </div>
-                          <div className="min-w-0">
-                            <div className="text-[12px] font-semibold text-slate-200">{n.title}</div>
-                            <div className="text-[11.5px] text-slate-400 mt-0.5 leading-snug">{n.detail}</div>
-                            <div className="text-[10px] font-mono text-slate-500 mt-1">{n.time} IST</div>
-                          </div>
+                      <div
+                        key={n.id}
+                        className={`p-2.5 rounded border text-xs cursor-pointer transition-colors ${
+                          n.read ? 'bg-stone-50 border-stone-200 opacity-60' : 'bg-white border-stone-300 hover:border-indigo-300'
+                        }`}
+                        onClick={() => {
+                          setShowNotifications(false)
+                          if (n.detail.includes('CSE-014')) {
+                            setSelectedEntity('CSE-014')
+                            setCurrentPage('entity')
+                          } else {
+                            setCurrentPage('gaps')
+                          }
+                        }}
+                      >
+                        <div className="flex items-center justify-between gap-1 mb-1">
+                          <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded uppercase font-bold ${
+                            n.severity === 'high' ? 'bg-rose-50 text-rose-600 border border-rose-200' : 'bg-amber-50 text-amber-600 border border-amber-200'
+                          }`}>
+                            {n.type}
+                          </span>
+                          <span className="text-[9.5px] font-mono text-slate-500">{n.time}</span>
                         </div>
+                        <div className="font-semibold text-slate-800 text-xs leading-snug">{n.title}</div>
+                        <div className="text-slate-500 text-[11px] mt-0.5 leading-relaxed">{n.detail}</div>
                       </div>
                     ))}
                   </div>
@@ -260,21 +384,16 @@ export default function Shell({ children }: { children: React.ReactNode }) {
               )}
             </div>
 
-            {/* User Profile */}
-            <div className="flex items-center gap-2.5 pl-3 border-l border-slate-800">
-              <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-cyan-600 to-blue-500 border border-cyan-400/40 flex items-center justify-center font-mono font-bold text-slate-950 text-xs shadow-glowCyan">
-                E7
-              </div>
-              <div className="hidden xl:block">
-                <div className="text-[12px] font-semibold text-slate-200 leading-none">Examiner-07</div>
-                <div className="text-[9.5px] text-slate-500 font-mono mt-0.5">Lead SOC Auditor</div>
-              </div>
+            {/* Offline Clock */}
+            <div className="hidden lg:flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-stone-100 border border-stone-200 text-xs font-mono text-slate-600">
+              <span className="w-2 h-2 rounded-full bg-indigo-500" />
+              <span>{timeString}</span>
             </div>
           </div>
         </header>
 
-        {/* Content View */}
-        <main className="flex-1 overflow-y-auto bg-[#080d1a]">
+        {/* Scrollable View Container */}
+        <main className="flex-1 overflow-y-auto bg-stone-50">
           {children}
         </main>
       </div>

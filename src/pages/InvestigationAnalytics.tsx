@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { fetchInvestigationAnalytics } from '../api/client'
+import { downloadCSV } from '../utils/export'
 import StatCard from '../components/StatCard'
 import { BarChart } from '../components/charts'
 import { TelemetryPulse } from '../components/ui'
@@ -22,6 +23,18 @@ export default function InvestigationAnalytics() {
   const behaviour = data?.behaviour ?? []
   const totalCases = kpis.totalCases ?? 32481
 
+  const handleExport = () => {
+    const headers = ['Metric', 'Value']
+    const rows = [
+      ['Total Investigated Cases', totalCases],
+      ['Mean Investigation Triage', kpis.meanDuration ?? '42 min'],
+      ['Investigation-to-Closure Ratio', kpis.investigationToClosure ?? '96.4%'],
+      ['Case Reopening Rate', kpis.caseReopening ?? '5.8%'],
+      ['Supervisory Review Queue', kpis.requiresReview ?? 560]
+    ]
+    downloadCSV(`SAT-SA_Investigation_Analytics_${new Date().toISOString().slice(0, 10)}`, headers, rows)
+  }
+
   return (
     <div className="p-6 max-w-[1700px] mx-auto space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-cyber-800 pb-4">
@@ -35,7 +48,7 @@ export default function InvestigationAnalytics() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <button className="btn btn-sm flex items-center gap-1.5 text-cyber-300">
+          <button onClick={handleExport} className="btn btn-sm flex items-center gap-1.5 text-cyber-300 hover:text-cyber-100">
             <Download className="w-3.5 h-3.5 text-neonCyan" /> Export Investigation Logs
           </button>
         </div>

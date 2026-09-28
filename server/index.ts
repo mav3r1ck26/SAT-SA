@@ -17,7 +17,7 @@ import validationRouter from './routes/validation'
 import mlRouter from './routes/ml'
 
 const app = express()
-const PORT = process.env.API_PORT || 3001
+const PORT = process.env.API_PORT || 3101
 
 // Middleware
 app.use(cors())
@@ -52,9 +52,9 @@ app.use('/api/ml', mlRouter)
 // Start
 async function main() {
   await connectDB()
-  app.listen(PORT, () => {
-    console.log(`\n[API] SAT-SA Backend running on http://localhost:${PORT}`)
-    console.log(`[API] Health check: http://localhost:${PORT}/api/health\n`)
+  app.listen(Number(PORT), '0.0.0.0', () => {
+    console.log(`\n[API] SAT-SA Backend running on http://127.0.0.1:${PORT}`)
+    console.log(`[API] Health check: http://127.0.0.1:${PORT}/api/health\n`)
   })
 }
 

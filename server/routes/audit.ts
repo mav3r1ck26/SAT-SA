@@ -36,4 +36,22 @@ router.get('/export', async (req, res) => {
   } catch (err) { handleError(err, res) }
 })
 
+// Create an audit entry
+router.post('/', async (req, res) => {
+  try {
+    const { user, action, entityId, findingId, detail, status, actionCategory } = req.body
+    const record = await AuditLog.create({
+      user: user || 'Examiner',
+      action: action || 'Manual Action',
+      actionCategory: actionCategory || 'Finding',
+      entityId,
+      findingId,
+      detail: detail || '',
+      status: status || 'Success',
+      timestamp: new Date()
+    })
+    res.status(201).json({ success: true, data: record })
+  } catch (err) { handleError(err, res) }
+})
+
 export default router

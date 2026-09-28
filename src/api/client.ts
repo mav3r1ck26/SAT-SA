@@ -89,6 +89,9 @@ export const fetchAuditLog = (params?: Record<string, string>) =>
 export const exportAuditLog = () =>
   request<any[]>('/audit/export')
 
+export const logAuditAction = (data: { user?: string; action: string; actionCategory?: string; entityId?: string; findingId?: string; detail?: string; status?: string }) =>
+  request<any>('/audit', { method: 'POST', body: JSON.stringify(data) })
+
 // ---- Notifications ----
 export const fetchNotifications = () =>
   request<{ notifications: any[]; unread: number }>('/notifications')
@@ -110,18 +113,44 @@ export const getReport = (id: string) =>
 export const fetchIngestionQuality = () =>
   request<any>('/ingestion/quality')
 
+export const fetchCoverageMatrix = (entityId?: string) =>
+  request<{ categories: string[]; columns: string[]; matrix: number[][] }>(`/analytics/coverage-matrix${entityId && entityId !== 'ALL' ? `?entityId=${entityId}` : ''}`)
+
 export async function uploadDataFile(file: File, source?: string) {
   const formData = new FormData()
   formData.append('file', file)
   if (source) formData.append('source', source)
   const res = await fetch(`${BASE}/ingestion/upload`, { method: 'POST', body: formData })
-  if (!res.ok) throw new Error(`Upload failed: ${res.status}`)
-  return res.json()
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: { message: `Upload failed: ${res.status}` } }))
+    throw new Error(err.error?.message || `Upload failed: ${res.status}`)
+  }
+  const json = await res.json()
+  return json && typeof json === 'object' && 'data' in json ? json.data : json
 }
 
 export const ingestFromAPI = (records: any[]) =>
   request<any>('/ingestion/api', { method: 'POST', body: JSON.stringify({ records }) })
 
+export const fetchSampleBundles = () =>
+  request<any[]>('/ingestion/samples')
+
+export const loadSampleBundle = (filename: string) =>
+  request<any>('/ingestion/load-sample', { method: 'POST', body: JSON.stringify({ filename }) })
+
 // ---- Validation ----
 export const fetchValidation = () =>
   request<any>('/validation/summary')
+
+// ---- Machine Learning ----
+export const fetchMLHealth = () =>
+  request<any>('/ml/health')
+
+export const fetchMLModelInfo = () =>
+  request<any>('/ml/model/info')
+
+export const evaluateFleetML = () =>
+  request<any>('/ml/evaluate-fleet', { method: 'POST' })
+
+export const trainAutoML = (params?: { n_entities?: number; periods_per_entity?: number; model_type?: string }) =>
+  request<any>('/ml/train-auto', { method: 'POST', body: JSON.stringify(params || {}) })

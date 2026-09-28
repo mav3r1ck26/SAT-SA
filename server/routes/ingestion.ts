@@ -30,6 +30,76 @@ router.get('/quality', async (req, res) => {
   } catch (err) { handleError(err, res) }
 })
 
+// List available preloaded sample datasets
+router.get('/samples', async (req, res) => {
+  try {
+    const samplesDir = path.join(__dirname, '..', '..', 'data', 'testing_datasets')
+    if (!fs.existsSync(samplesDir)) return res.json({ success: true, data: [] })
+    const files = fs.readdirSync(samplesDir).filter(f => f.endsWith('.json') || f.endsWith('.csv'))
+    const list = files.map(filename => {
+      const stats = fs.statSync(path.join(samplesDir, filename))
+      let title = filename
+      let description = 'Testing dataset'
+      let type = 'Alerts'
+      if (filename.includes('scada')) {
+        title = 'SCADA / OT Grid Breach Telemetry'
+        description = '120 critical SCADA alerts testing rapid closure (<3m) and exfiltration gaps'
+        type = 'SIEM JSON'
+      } else if (filename.includes('corebanking')) {
+        title = 'Core Banking Syslog CEF Anomaly Stream'
+        description = '150 CEF alerts testing statutory CERT-In 6h delay breach and repetitive templates'
+        type = 'CEF CSV'
+      } else if (filename.includes('powergrid')) {
+        title = 'Power Grid Forensic Audit Cases'
+        description = '100 case records testing investigation depth, attachments, and closure rigor'
+        type = 'Cases CSV'
+      } else if (filename.includes('ml_batch')) {
+        title = 'SOC Efficiency ML Evaluation Batch'
+        description = '22 quarterly feature vectors across 11 CSEs for ML inference benchmarking'
+        type = 'ML CSV'
+      } else if (filename.includes('blindspot')) {
+        title = 'Negative Space & Blind Spot Matrix'
+        description = 'Sector-wide sensor blackout and suppressed telemetry audit matrix'
+        type = 'Matrix JSON'
+      }
+      return {
+        id: filename,
+        filename,
+        title,
+        description,
+        type,
+        sizeKb: Math.max(1, Math.round(stats.size / 1024))
+      }
+    })
+    res.json({ success: true, data: list })
+  } catch (err) { handleError(err, res) }
+})
+
+// Ingest a sample bundle directly by filename
+router.post('/load-sample', async (req, res) => {
+  try {
+    const { filename } = req.body
+    if (!filename) return res.status(400).json({ success: false, error: { code: 'BAD_REQUEST', message: 'Filename required' } })
+    const samplesDir = path.join(__dirname, '..', '..', 'data', 'testing_datasets')
+    const filePath = path.join(samplesDir, path.basename(filename))
+    if (!fs.existsSync(filePath)) return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Sample bundle not found' } })
+
+    const content = fs.readFileSync(filePath, 'utf8')
+    const ext = path.extname(filename).toLowerCase()
+    let records: any[] = []
+    if (ext === '.json') {
+      const parsed = JSON.parse(content)
+      records = Array.isArray(parsed) ? parsed : (parsed.records || parsed.alerts || parsed.cases || [parsed])
+    } else if (ext === '.csv') {
+      records = parseCSV(content)
+    }
+
+    const validation = validateRecords(records)
+    const result = await persistValidated(records, validation.valid, 'Test Dataset: ' + filename, filename)
+    res.json({ success: true, data: result })
+  } catch (err) { handleError(err, res) }
+})
+
 // Upload & validate a data file (CSV/JSON)
 router.post('/upload', upload.single('file'), async (req, res) => {
   try {
@@ -43,11 +113,19 @@ router.post('/upload', upload.single('file'), async (req, res) => {
     let records: any[] = []
     if (ext === '.json') {
       const parsed = JSON.parse(content)
-      records = Array.isArray(parsed) ? parsed : (parsed.records || [])
-    } else if (ext === '.csv') {
+      records = Array.isArray(parsed) ? parsed : (parsed.records || parsed.alerts || parsed.cases || [parsed])
+    } else if (ext === '.csv' || ext === '.cef' || ext === '.txt' || ext === '.log') {
       records = parseCSV(content)
+    } else if (ext === '.zip' || ext === '.gz' || ext === '.tar') {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'ARCHIVE_EXTRACTION_REQUIRED',
+          message: 'Compressed archive bundles (.zip/.tar.gz) must be extracted before air-gap ingestion. Please extract and upload the contained CSV, CEF, or JSON telemetry files directly.'
+        }
+      })
     } else {
-      return res.status(400).json({ success: false, error: { code: 'BAD_REQUEST', message: 'Unsupported file type. Use CSV or JSON.' } })
+      return res.status(400).json({ success: false, error: { code: 'BAD_REQUEST', message: 'Unsupported file type. Use CSV, CEF, or JSON.' } })
     }
 
     // Validate & ingest
@@ -146,7 +224,11 @@ async function persistValidated(records: any[], valid: any[], source: string, fi
   let inserted = 0
   for (const r of valid) {
     try {
-      await Alert.create(r)
+      if (r.closureReason || r.investigationDepth !== undefined || (r.id && String(r.id).startsWith('CASE-'))) {
+        await Case.create(r)
+      } else {
+        await Alert.create(r)
+      }
       inserted++
     } catch { /* duplicate or bad record */ }
   }

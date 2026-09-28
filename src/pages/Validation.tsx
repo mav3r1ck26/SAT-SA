@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { fetchValidation } from '../api/client'
+import { downloadCSV } from '../utils/export'
 import { TelemetryPulse } from '../components/ui'
 import { CheckCircle2, AlertTriangle, ShieldCheck, Cpu, Download, BarChart2 } from 'lucide-react'
 
@@ -21,6 +22,20 @@ export default function Validation() {
     [m.missedFindings, Math.max(0, (m.confirmed || 0) + (m.dismissed || 0) - (m.truePositives || 0))]
   ]
 
+  const handleExport = () => {
+    const headers = ['Validation Metric', 'Value']
+    const rows = [
+      ['Total Supervised Findings', m.totalFindings],
+      ['Confirmed True Positives', m.confirmed],
+      ['Dismissed False Positives', m.dismissed],
+      ['Pending in Review', m.inReview],
+      ['Model Precision (%)', m.precision],
+      ['Recall Coverage (%)', m.recall],
+      ['Human-Model Review Agreement (%)', m.reviewAgreement]
+    ]
+    downloadCSV(`SAT-SA_Model_Validation_${new Date().toISOString().slice(0, 10)}`, headers, rows)
+  }
+
   return (
     <div className="p-6 max-w-[1700px] mx-auto space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-cyber-800 pb-4">
@@ -34,7 +49,7 @@ export default function Validation() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <button className="btn btn-sm flex items-center gap-1.5 text-cyber-300">
+          <button onClick={handleExport} className="btn btn-sm flex items-center gap-1.5 text-cyber-300 hover:text-cyber-100">
             <Download className="w-3.5 h-3.5 text-neonCyan" /> Export Model Metrics
           </button>
         </div>

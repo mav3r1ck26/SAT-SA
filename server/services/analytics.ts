@@ -634,11 +634,42 @@ export async function peerBenchmark(entityId: string) {
 export async function generateReviewQueue() {
   const config = await loadConfig()
   const gaps = await detectExecutionGaps()
+  await persistFindings(gaps)
   const blindSpots = await detectBlindSpots()
 
+  const findingsInDb = await Finding.find().lean()
+  const findingMap = new Map(findingsInDb.map(f => [`${f.entityId}_${f.title}`, f]))
+
   const allFindings = [
-    ...gaps.map(g => ({ ...g, source: 'execution_gap' })),
-    ...blindSpots.map(b => ({ ...b, source: 'negative_space', findingType: 'NEGATIVE_SPACE' }))
+    ...gaps.map((g, idx) => {
+      const match = findingMap.get(`${g.entityId}_${g.title}`)
+      const id = match?.id || `EG-${180 + idx + 1}`
+      return {
+        ...g,
+        id,
+        findingId: id,
+        ref: id,
+        status: match?.status || 'New',
+        reviewedBy: match?.reviewedBy || null,
+        examinerNote: match?.examinerNote || null,
+        source: 'execution_gap'
+      }
+    }),
+    ...blindSpots.map((b, idx) => {
+      const match = findingMap.get(`${b.entityId}_${b.category}`) || findingMap.get(`${b.entityId}_${b.description}`)
+      const id = match?.id || `NS-${200 + idx + 1}`
+      return {
+        ...b,
+        id,
+        findingId: id,
+        ref: id,
+        status: match?.status || 'New',
+        reviewedBy: match?.reviewedBy || null,
+        examinerNote: match?.examinerNote || null,
+        source: 'negative_space',
+        findingType: 'NEGATIVE_SPACE'
+      }
+    })
   ]
 
   const weights = config.reviewPriorityWeights
@@ -668,7 +699,7 @@ export async function generateReviewQueue() {
         ...f,
         priority: 0,
         riskScore: Math.round(composite),
-        reasoning: `${f.title}: ${f.description} Evidence: ${f.evidenceCount} items. Confidence: ${f.confidence}%. ${f.peerComparison || 'Peer comparison pending.'}`,
+        reasoning: `${f.title}: ${f.description} Evidence: ${f.evidenceCount || 0} items. Confidence: ${f.confidence}%. ${f.peerComparison || 'Peer comparison pending.'}`,
         suggestedAction: f.recommendation || 'Manual examination recommended.'
       }
     })
@@ -677,6 +708,52 @@ export async function generateReviewQueue() {
 
   return prioritized
 }
+
+// ============================================================
+// TELEMETRY COVERAGE MATRIX (DYNAMIC HEATMAP)
+// ============================================================
+export async function telemetryCoverageMatrix(entityId?: string) {
+  const filter: any = {}
+  if (entityId && entityId !== 'ALL') filter.entityId = entityId
+  const records = await TelemetryCoverage.find(filter).lean()
+  
+  const categories = Array.from(new Set(records.map(r => r.category))).filter(Boolean)
+  const columns = ['Expected Telemetry', 'Observed Telemetry', 'Alert Gen. Stream', 'Case Evidence', 'Escalation Logs']
+  
+  if (categories.length === 0) {
+    return {
+      categories: ['Critical systems', 'Security devices', 'Network segments', 'Applications', 'Cloud environments', 'Identity infrastructure', 'OT/ICS environments'],
+      columns,
+      matrix: [
+        [100, 75, 80, 70, 65],
+        [100, 82, 85, 78, 72],
+        [100, 78, 80, 72, 68],
+        [100, 68, 70, 62, 58],
+        [100, 62, 65, 55, 48],
+        [100, 85, 88, 80, 75],
+        [100, 48, 50, 42, 35]
+      ]
+    }
+  }
+
+  const matrix = categories.map(cat => {
+    const matching = records.filter(r => r.category === cat)
+    const avg = (fn: (r: any) => number) => {
+      const vals = matching.map(fn).filter(v => v != null && !isNaN(v))
+      return vals.length ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : 0
+    }
+    return [
+      avg(r => r.expectedCoverage ?? r.expected ?? 100),
+      avg(r => r.observedCoverage ?? r.observed ?? 75),
+      avg(r => r.alertGeneration ?? Math.min(100, Math.round((r.observedCoverage ?? 75) * 1.05))),
+      avg(r => r.investigationEvidence ?? Math.round((r.observedCoverage ?? 75) * 0.9)),
+      avg(r => r.escalationEvidence ?? Math.round((r.observedCoverage ?? 75) * 0.82))
+    ]
+  })
+
+  return { categories, columns, matrix }
+}
+
 
 // ============================================================
 // ANOMALY DETECTION

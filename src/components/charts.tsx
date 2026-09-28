@@ -5,7 +5,7 @@ export function StackedBar({ data }: { data: { level: string; count: number; col
   const total = data.reduce((s, d) => s + d.count, 0) || 1
   return (
     <div>
-      <div className="flex h-3.5 rounded-lg overflow-hidden bg-slate-900 border border-slate-800/80 p-0.5 gap-0.5">
+      <div className="flex h-3.5 rounded-lg overflow-hidden bg-stone-200 border border-stone-300 p-0.5 gap-0.5">
         {data.map((d, i) => (
           <div
             key={i}
@@ -19,8 +19,8 @@ export function StackedBar({ data }: { data: { level: string; count: number; col
         {data.map((d, i) => (
           <div key={i} className="flex items-center gap-1.5">
             <span className="h-2 w-2 rounded-sm" style={{ backgroundColor: d.color }} />
-            <span className="text-[11px] text-slate-400 font-medium">{d.level}</span>
-            <span className="text-[11px] font-mono font-semibold text-slate-200">({d.count})</span>
+            <span className="text-[11px] text-slate-600 font-medium">{d.level}</span>
+            <span className="text-[11px] font-mono font-semibold text-slate-800">({d.count})</span>
           </div>
         ))}
       </div>
@@ -29,7 +29,7 @@ export function StackedBar({ data }: { data: { level: string; count: number; col
 }
 
 // ===== Simple Bar Chart =====
-export function BarChart({ data, color = '#06b6d4', height = 120, valueFormatter }: {
+export function BarChart({ data, color = '#4f46e5', height = 120, valueFormatter }: {
   data: { label: string; value: number }[]
   color?: string
   height?: number
@@ -43,16 +43,16 @@ export function BarChart({ data, color = '#06b6d4', height = 120, valueFormatter
           <div key={i} className="flex-1 flex flex-col items-center gap-1.5 group" title={`${d.label}: ${valueFormatter ? valueFormatter(d.value) : d.value}`}>
             <div className="w-full flex justify-center h-full items-end">
               <div
-                className="rounded-t-md transition-all group-hover:brightness-125"
+                className="rounded-t-md transition-all group-hover:brightness-110"
                 style={{
                   height: Math.max(((d.value || 0) / max) * (height - 24), 4),
                   width: '75%',
                   backgroundColor: color,
-                  boxShadow: `0 0 10px -2px ${color}50`
+                  boxShadow: 'none'
                 }}
               />
             </div>
-            <span className="text-[10px] text-slate-400 font-mono truncate w-full text-center group-hover:text-cyan-300 transition-colors">
+            <span className="text-[10px] text-slate-500 font-mono truncate w-full text-center group-hover:text-indigo-600 transition-colors">
               {d.label}
             </span>
           </div>
@@ -84,21 +84,21 @@ export function MultiBar({ data, series, height = 130, valueFormatter }: {
                   style={{
                     backgroundColor: s.color,
                     height: `${Math.max(4, (d[s.key] / max) * 100)}%`,
-                    boxShadow: `0 0 8px -2px ${s.color}60`
+                    boxShadow: 'none'
                   }}
                   title={`${d.label} - ${s.label}: ${d[s.key]}`}
                 />
               ))}
             </div>
-            <span className="text-[10px] text-slate-400 font-mono w-full text-center truncate">{d.label}</span>
+            <span className="text-[10px] text-slate-500 font-mono w-full text-center truncate">{d.label}</span>
           </div>
         ))}
       </div>
-      <div className="flex gap-4 mt-3 flex-wrap pt-2 border-t border-slate-800/60">
+      <div className="flex gap-4 mt-3 flex-wrap pt-2 border-t border-stone-200">
         {series.map((s, i) => (
           <div key={i} className="flex items-center gap-1.5">
             <span className="h-2 w-2 rounded-sm" style={{ backgroundColor: s.color }} />
-            <span className="text-[11px] text-slate-400 font-medium">{s.label}</span>
+            <span className="text-[11px] text-slate-600 font-medium">{s.label}</span>
           </div>
         ))}
       </div>
@@ -123,7 +123,7 @@ export function Donut({ data, size = 140, thickness = 16, centerLabel, centerVal
     <div className="flex items-center gap-6">
       <div className="relative" style={{ width: size, height: size }}>
         <svg width={size} height={size} className="-rotate-90">
-          <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="#16223b" strokeWidth={thickness} />
+          <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="#e7e5e4" strokeWidth={thickness} />
           {data.map((d, i) => {
             const frac = (d.value || 0) / total
             const seg = (
@@ -131,7 +131,7 @@ export function Donut({ data, size = 140, thickness = 16, centerLabel, centerVal
                 key={i} cx={size / 2} cy={size / 2} r={r} fill="none"
                 stroke={d.color} strokeWidth={thickness} strokeDasharray={`${frac * c} ${c}`}
                 strokeDashoffset={-offset * c} strokeLinecap="butt"
-                style={{ filter: `drop-shadow(0 0 4px ${d.color}60)` }}
+                style={{ filter: 'none' }}
               />
             )
             offset += frac
@@ -139,16 +139,16 @@ export function Donut({ data, size = 140, thickness = 16, centerLabel, centerVal
           })}
         </svg>
         <div className="absolute inset-0 flex items-center justify-center flex-col">
-          {centerValue && <span className="text-2xl font-bold text-white font-mono leading-none">{centerValue}</span>}
-          {centerLabel && <span className="text-[10px] text-slate-400 font-mono mt-0.5 uppercase tracking-wider">{centerLabel}</span>}
+          {centerValue && <span className="text-2xl font-bold text-slate-900 font-mono leading-none">{centerValue}</span>}
+          {centerLabel && <span className="text-[10px] text-slate-700 font-mono mt-0.5 uppercase tracking-wider">{centerLabel}</span>}
         </div>
       </div>
       <div className="flex flex-col gap-2">
         {data.map((d, i) => (
           <div key={i} className="flex items-center gap-2.5">
             <span className="h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: d.color }} />
-            <span className="text-[11.5px] text-slate-300 font-medium">{d.label}</span>
-            <span className="font-mono text-[11.5px] text-cyan-300 font-semibold ml-auto">{(d.value || 0).toLocaleString()}</span>
+            <span className="text-[11.5px] text-slate-600 font-medium">{d.label}</span>
+            <span className="font-mono text-[11.5px] text-indigo-600 font-semibold ml-auto">{(d.value || 0).toLocaleString()}</span>
           </div>
         ))}
       </div>
@@ -164,12 +164,12 @@ export function HBar({ data }: { data: { label: string; value: number; sub?: str
       {data.map((d, i) => (
         <div key={i}>
           <div className="flex justify-between items-baseline mb-1">
-            <span className="text-[12px] text-slate-300 font-medium">{d.label}</span>
-            {d.sub && <span className="text-[11px] font-mono text-slate-400">{d.sub}</span>}
+            <span className="text-[12px] text-slate-700 font-medium">{d.label}</span>
+            {d.sub && <span className="text-[11px] font-mono text-slate-500">{d.sub}</span>}
           </div>
-          <div className="risk-bar-track bg-slate-900 border border-slate-800">
+          <div className="risk-bar-track bg-stone-200 border border-stone-200">
             <div
-              className={`risk-bar-fill ${d.color || 'bg-cyan-500'}`}
+              className={`risk-bar-fill ${d.color || 'bg-indigo-500'}`}
               style={{ width: `${((d.value || 0) / max) * 100}%` }}
             />
           </div>
@@ -186,26 +186,26 @@ export function Heatmap({ rows, columns, data }: {
   data: number[][]
 }) {
   const colColor = (v: number) => {
-    if (v >= 80) return 'bg-emerald-950/60 text-emerald-300 border-emerald-700/50 shadow-glowEmerald'
-    if (v >= 60) return 'bg-cyan-950/60 text-cyan-300 border-cyan-700/50'
-    if (v >= 40) return 'bg-amber-950/60 text-amber-300 border-amber-700/50'
-    return 'bg-rose-950/70 text-rose-300 border-rose-700/50 shadow-glowRose'
+    if (v >= 80) return 'bg-emerald-50 text-emerald-700 border-emerald-200'
+    if (v >= 60) return 'bg-blue-50 text-blue-700 border-blue-200'
+    if (v >= 40) return 'bg-amber-50 text-amber-700 border-amber-200'
+    return 'bg-rose-50 text-rose-700 border-rose-200'
   }
   return (
-    <div className="overflow-x-auto rounded-lg border border-slate-800/90">
-      <table className="w-full border-collapse bg-[#0c1324]/80">
+    <div className="overflow-x-auto rounded-lg border border-stone-200">
+      <table className="w-full border-collapse bg-white">
         <thead>
-          <tr className="bg-[#080d1a]">
-            <th className="text-left text-[10.5px] font-semibold uppercase tracking-wider text-slate-400 px-4 py-3 border-b border-slate-800 font-mono">Infrastructure Telemetry</th>
+          <tr className="bg-stone-50">
+            <th className="text-left text-[10.5px] font-semibold uppercase tracking-wider text-slate-500 px-4 py-3 border-b border-stone-200 font-mono">Infrastructure Telemetry</th>
             {columns.map((c, i) => (
-              <th key={i} className="text-center text-[10.5px] font-semibold uppercase tracking-wider text-slate-400 px-3 py-3 border-b border-slate-800 whitespace-nowrap font-mono">{c}</th>
+              <th key={i} className="text-center text-[10.5px] font-semibold uppercase tracking-wider text-slate-500 px-3 py-3 border-b border-stone-200 whitespace-nowrap font-mono">{c}</th>
             ))}
           </tr>
         </thead>
         <tbody>
           {rows.map((row, i) => (
-            <tr key={i} className="border-b border-slate-800/40 hover:bg-slate-800/40 transition-colors">
-              <td className="px-4 py-2.5 text-[12px] font-medium text-slate-200 whitespace-nowrap font-mono">{row}</td>
+            <tr key={i} className="border-b border-stone-200 hover:bg-stone-50 transition-colors">
+              <td className="px-4 py-2.5 text-[12px] font-medium text-slate-700 whitespace-nowrap font-mono">{row}</td>
               {(data[i] || []).map((v, j) => (
                 <td key={j} className="px-2 py-2 text-center">
                   <div className={`inline-block min-w-[50px] px-2 py-1 rounded-md text-[11.5px] font-mono font-bold border ${colColor(v)}`}>
@@ -244,11 +244,11 @@ export function AreaChart({ data, series, height = 160, valueFormatter }: {
       <svg width="100%" viewBox={`0 0 ${w} ${h}`} className="max-w-full" style={{ minWidth: 400 }}>
         {[0.25, 0.5, 0.75, 1].map((f, i) => (
           <g key={i}>
-            <line x1={pad.left} x2={w - pad.right} y1={pad.top + innerH * (1 - f)} y2={pad.top + innerH * (1 - f)} stroke="#1e293b" strokeWidth="1" strokeDasharray="3 3" />
+            <line x1={pad.left} x2={w - pad.right} y1={pad.top + innerH * (1 - f)} y2={pad.top + innerH * (1 - f)} stroke="#e7e5e4" strokeWidth="1" strokeDasharray="3 3" />
             <text x={pad.left - 6} y={pad.top + innerH * (1 - f) + 3} textAnchor="end" fontSize="9" fill="#64748b" className="font-mono">{Math.round(max * f).toLocaleString()}</text>
           </g>
         ))}
-        <line x1={pad.left} x2={w - pad.right} y1={pad.top + innerH} y2={pad.top + innerH} stroke="#334155" />
+        <line x1={pad.left} x2={w - pad.right} y1={pad.top + innerH} y2={pad.top + innerH} stroke="#cbd5e1" />
         {series.map((s, si) => {
           const linePts = data.map((d, i) => `${x(i)},${y(d[s.key])}`).join(' ')
           const areaPts = `${pad.left},${pad.top + innerH} ${linePts} ${w - pad.right},${pad.top + innerH}`
@@ -263,11 +263,11 @@ export function AreaChart({ data, series, height = 160, valueFormatter }: {
           <text key={i} x={x(i)} y={h - 6} textAnchor="middle" fontSize="9" fill="#64748b" className="font-mono">{d.label}</text>
         ))}
       </svg>
-      <div className="flex gap-4 mt-2 flex-wrap pt-2 border-t border-slate-800/60">
+      <div className="flex gap-4 mt-2 flex-wrap pt-2 border-t border-stone-200">
         {series.map((s, i) => (
           <div key={i} className="flex items-center gap-1.5">
             <span className="h-2 w-2 rounded-sm" style={{ backgroundColor: s.color }} />
-            <span className="text-[11px] text-slate-400 font-medium">{s.label}</span>
+            <span className="text-[11px] text-slate-500 font-medium">{s.label}</span>
           </div>
         ))}
       </div>
@@ -293,21 +293,21 @@ export function Radar({ data, max = 100, size = 220 }: {
     <svg width={size} height={size} className="mx-auto overflow-visible">
       {[0.25, 0.5, 0.75, 1].map((f, i) => {
         const pts = data.map((_, j) => point(j, max * f).join(',')).join(' ')
-        return <polygon key={i} points={pts} fill="none" stroke="#1e293b" strokeWidth="1" strokeDasharray="3 3" />
+        return <polygon key={i} points={pts} fill="none" stroke="#e7e5e4" strokeWidth="1" strokeDasharray="3 3" />
       })}
       {data.map((_, i) => {
         const [px, py] = point(i, max)
-        return <line key={i} x1={cx} y1={cy} x2={px} y2={py} stroke="#1e293b" strokeWidth="1" />
+        return <line key={i} x1={cx} y1={cy} x2={px} y2={py} stroke="#e7e5e4" strokeWidth="1" />
       })}
-      <polygon points={poly} fill="#06b6d4" opacity="0.2" stroke="#00e5ff" strokeWidth="2.2" style={{ filter: 'drop-shadow(0 0 8px rgba(0,229,255,0.4))' }} />
+      <polygon points={poly} fill="#6366f1" opacity="0.15" stroke="#4f46e5" strokeWidth="2.2" style={{ filter: 'none' }} />
       {data.map((d, i) => {
         const [px, py] = point(i, d.value || 0)
         const labelPos = point(i, max)
         return (
           <g key={i}>
-            <circle cx={px} cy={py} r="4" fill="#00e5ff" stroke="#0c1324" strokeWidth="2" />
-            <text x={labelPos[0]} y={labelPos[1]} textAnchor="middle" fontSize="10" fill="#94a3b8" className="font-mono font-semibold" dy={labelPos[1] < cy ? -6 : 12}>
-              {d.label} <tspan fill="#38bdf8" fontWeight="700">({d.value ?? 0})</tspan>
+            <circle cx={px} cy={py} r="4" fill="#4f46e5" stroke="#ffffff" strokeWidth="2" />
+            <text x={labelPos[0]} y={labelPos[1]} textAnchor="middle" fontSize="10" fill="#475569" className="font-mono font-semibold" dy={labelPos[1] < cy ? -6 : 12}>
+              {d.label} <tspan fill="#4f46e5" fontWeight="700">({d.value ?? 0})</tspan>
             </text>
           </g>
         )
@@ -318,16 +318,16 @@ export function Radar({ data, max = 100, size = 220 }: {
 
 // ===== Score Bars (horizontal) =====
 export function ScoreBars({ data }: { data: { label: string; value: number }[] }) {
-  const color = (v: number = 0) => v >= 85 ? '#f43f5e' : v >= 70 ? '#f97316' : v >= 55 ? '#f59e0b' : v >= 40 ? '#06b6d4' : '#10b981'
+  const color = (v: number = 0) => v >= 85 ? '#f43f5e' : v >= 70 ? '#f97316' : v >= 55 ? '#f59e0b' : v >= 40 ? '#4f46e5' : '#10b981'
   return (
     <div className="flex flex-col gap-3">
       {data.map((d, i) => (
         <div key={i} className="flex items-center gap-3">
-          <span className="w-28 text-[12px] text-slate-300 font-medium font-mono">{d.label}</span>
-          <div className="risk-bar-track flex-1 bg-slate-900 border border-slate-800">
-            <div className="risk-bar-fill" style={{ width: `${d.value ?? 0}%`, backgroundColor: color(d.value ?? 0), boxShadow: `0 0 8px -2px ${color(d.value ?? 0)}80` }} />
+          <span className="w-28 text-[12px] text-slate-600 font-medium font-mono">{d.label}</span>
+          <div className="risk-bar-track flex-1 bg-stone-200 border border-stone-200">
+            <div className="risk-bar-fill" style={{ width: `${d.value ?? 0}%`, backgroundColor: color(d.value ?? 0), boxShadow: 'none' }} />
           </div>
-          <span className="w-8 text-right font-mono text-[12px] font-bold text-white">{d.value ?? 0}</span>
+          <span className="w-8 text-right font-mono text-[12px] font-bold text-slate-900">{d.value ?? 0}</span>
         </div>
       ))}
     </div>

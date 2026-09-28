@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { fetchEvidenceTimeline } from '../api/client'
+import { downloadJSON } from '../utils/export'
 import { ChevronRight, ShieldCheck, AlertCircle, Fingerprint, Database, Download } from 'lucide-react'
 import FindingExplanation from '../components/FindingExplanation'
 import { TelemetryPulse, MitreBadge } from '../components/ui'
@@ -29,6 +30,10 @@ export default function EvidenceExplorer() {
     fetchEvidenceTimeline('CASE-00001').then(r => setTimeline(r.timeline || defaultTimeline)).catch(() => setTimeline(defaultTimeline))
   }, [])
 
+  const handleExport = () => {
+    downloadJSON(`SAT-SA_Evidence_Timeline_CASE-00001_${new Date().toISOString().slice(0, 10)}`, timeline)
+  }
+
   return (
     <div className="p-6 max-w-[1700px] mx-auto space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-cyber-800 pb-4">
@@ -42,7 +47,7 @@ export default function EvidenceExplorer() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <button className="btn btn-sm flex items-center gap-1.5 text-cyber-300">
+          <button onClick={handleExport} className="btn btn-sm flex items-center gap-1.5 text-cyber-300 hover:text-cyber-100">
             <Download className="w-3.5 h-3.5 text-neonCyan" /> Export Audit Trail (JSON)
           </button>
         </div>

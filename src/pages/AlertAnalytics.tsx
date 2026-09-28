@@ -3,6 +3,7 @@ import { MultiBar, BarChart, Donut } from '../components/charts'
 import StatCard from '../components/StatCard'
 import { TelemetryPulse } from '../components/ui'
 import { fetchAlertAnalytics } from '../api/client'
+import { downloadCSV } from '../utils/export'
 import { Bell, Download, Filter, Flame, Clock, Layers, ArrowUpRight } from 'lucide-react'
 
 export default function AlertAnalytics() {
@@ -25,6 +26,18 @@ export default function AlertAnalytics() {
   const repeatAlerts = data?.repeatAlerts ?? []
   const criticalClosure = data?.criticalClosure ?? []
 
+  const handleExport = () => {
+    const headers = ['Metric', 'Value']
+    const rows = [
+      ['Total Ingested Alerts', totalAlerts],
+      ['Mean Ack Latency', ackTime],
+      ['Mean Closure Duration', closureTime],
+      ['Alert-to-Case Escalation', conversion],
+      ['Premature Critical Closures', criticalClosures]
+    ]
+    downloadCSV(`SAT-SA_Alert_Analytics_${new Date().toISOString().slice(0, 10)}`, headers, rows)
+  }
+
   return (
     <div className="p-6 max-w-[1700px] mx-auto space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-cyber-800 pb-4">
@@ -38,7 +51,7 @@ export default function AlertAnalytics() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <button className="btn btn-sm flex items-center gap-1.5 text-cyber-300">
+          <button onClick={handleExport} className="btn btn-sm flex items-center gap-1.5 text-cyber-300 hover:text-cyber-100">
             <Download className="w-3.5 h-3.5 text-neonCyan" /> Export Alert Metrics
           </button>
         </div>
