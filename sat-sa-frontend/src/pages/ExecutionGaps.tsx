@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
-import { cn } from '../../lib/utils';
-import { fetchFindings } from '../../api/client';
+import { fetchFindings } from '../api/client';
 import StatCard from '../components/StatCard';
 import FindingExplanation from '../components/FindingExplanation';
 import { SeverityBadge, Confidence } from '../components/ui';

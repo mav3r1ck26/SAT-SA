@@ -82,7 +82,7 @@ export default function DataIngestion() {
 
   return (
     <div className="p-6 max-w-[1700px] mx-auto space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-stone-200 pb-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200 pb-4">
         <div>
           <div className="flex items-center gap-3">
             <h1 className="page-title text-2xl font-bold tracking-tight">Air-Gap Telemetry Ingestion Pipeline</h1>
@@ -114,10 +114,10 @@ export default function DataIngestion() {
                 i === 0 
                   ? 'bg-indigo-50 text-indigo-600 border border-indigo-200 shadow-sm' 
                   : i < 3 
-                  ? 'bg-white text-slate-700 border border-stone-300' 
-                  : 'bg-stone-50 text-slate-400 border border-stone-200'
+                  ? 'bg-white text-slate-700 border border-slate-300' 
+                  : 'bg-slate-50 text-slate-400 border border-slate-200'
               }`}>
-                <span className="w-4 h-4 rounded-full bg-white border border-stone-300 flex items-center justify-center text-[10px]">
+                <span className="w-4 h-4 rounded-full bg-white border border-slate-300 flex items-center justify-center text-[10px]">
                   {i + 1}
                 </span>
                 {s}
@@ -130,7 +130,7 @@ export default function DataIngestion() {
 
       {/* Preloaded Realistic Test Datasets (1-Click Ingestion) */}
       <div className="card p-5 border-indigo-200 bg-white shadow-sm">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 pb-3 border-b border-stone-200">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 pb-3 border-b border-slate-200">
           <div>
             <div className="flex items-center gap-2 text-indigo-600 font-bold text-sm">
               <Sparkles className="w-4 h-4 text-indigo-600" /> Preloaded Testing Bundles (Air-Gap Test Suite)
@@ -154,7 +154,7 @@ export default function DataIngestion() {
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
           {sampleBundles.length > 0 ? sampleBundles.slice(0, 3).map((bundle: any) => (
-            <div key={bundle.filename} className="bg-stone-50 rounded-lg p-4 border border-stone-200 flex flex-col justify-between hover:border-stone-300 transition-colors">
+            <div key={bundle.filename} className="bg-slate-50 rounded-lg p-4 border border-slate-200 flex flex-col justify-between hover:border-slate-300 transition-colors">
               <div className="space-y-2">
                 <div className="flex items-center justify-between gap-2">
                   <span className="badge badge-info text-[10px] font-mono">{bundle.type}</span>
@@ -164,7 +164,7 @@ export default function DataIngestion() {
                 <p className="text-[11.5px] text-slate-600 leading-relaxed">{bundle.description}</p>
               </div>
 
-              <div className="mt-4 pt-3 border-t border-stone-200 flex items-center justify-between">
+              <div className="mt-4 pt-3 border-t border-slate-200 flex items-center justify-between">
                 <span className="mono-id text-[10.5px] text-slate-500 truncate max-w-[140px]">{bundle.filename}</span>
                 <button
                   onClick={() => handleLoadSample(bundle.filename, bundle.title)}
@@ -194,7 +194,7 @@ export default function DataIngestion() {
             <div className="label text-slate-700 font-bold">Manual Telemetry File Ingestion</div>
             <div className="flex flex-wrap gap-2">
               {sources.map((s, i) => (
-                <div key={i} className="chip bg-white border-stone-300 text-slate-600 font-mono text-[11px]">
+                <div key={i} className="chip bg-white border-slate-300 text-slate-600 font-mono text-[11px]">
                   {s}
                 </div>
               ))}
@@ -248,7 +248,7 @@ export default function DataIngestion() {
 
       {/* Data Quality & Database Status */}
       <div className="card overflow-hidden">
-        <div className="card-header border-b border-stone-200 pb-3 flex items-center justify-between">
+        <div className="card-header border-b border-slate-200 pb-3 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Database className="w-4 h-4 text-indigo-600" />
             <div className="card-title">Ingested Telemetry Database & Data Quality Telemetry</div>
@@ -257,7 +257,7 @@ export default function DataIngestion() {
         </div>
 
         <div className="p-5 space-y-5">
-          <div className="bg-stone-50 p-4 rounded-lg border border-stone-200 space-y-2">
+          <div className="bg-slate-50 p-4 rounded-lg border border-slate-200 space-y-2">
             <div className="flex justify-between items-center text-xs font-mono">
               <span className="text-slate-600 font-bold">Overall Ingestion Quality Index</span>
               <span className="text-indigo-600 font-bold">{qualityPct}% Fidelity</span>
@@ -278,7 +278,7 @@ export default function DataIngestion() {
             ].map((stat, i) => {
               const Icon = stat.icon
               return (
-                <div key={i} className="bg-stone-50 rounded-lg p-4 border border-stone-200 flex items-center justify-between">
+                <div key={i} className="bg-slate-50 rounded-lg p-4 border border-slate-200 flex items-center justify-between">
                   <div>
                     <div className="label text-slate-500 text-[10px] mb-1">{stat.label}</div>
                     <div className="font-mono text-2xl font-bold text-slate-800">{stat.value.toLocaleString()}</div>
@@ -306,7 +306,7 @@ export default function DataIngestion() {
                   </thead>
                   <tbody>
                     {batches.map((b: any, i: number) => (
-                      <tr key={i} className="hover:bg-stone-100 transition-colors">
+                      <tr key={i} className="hover:bg-slate-100 transition-colors">
                         <td className="text-xs font-mono text-slate-800">{b.source}</td>
                         <td className="font-mono text-xs text-slate-600 text-right">{b.recordsReceived}</td>
                         <td className="font-mono text-xs text-slate-600 text-right">{b.validRecords}</td>

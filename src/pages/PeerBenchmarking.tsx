@@ -27,10 +27,10 @@ export default function PeerBenchmarking() {
   const compSector = entity?.sector || 'Power & Energy'
 
   const getBarColor = (percentile: number) => {
-    if (percentile >= 85) return 'bg-neonRose shadow-glow-rose'
+    if (percentile >= 85) return 'bg-rose-600 shadow-sm'
     if (percentile >= 70) return 'bg-orange-500'
-    if (percentile >= 40) return 'bg-cyan-500 shadow-glow-cyan'
-    return 'bg-neonEmerald shadow-glow-emerald'
+    if (percentile >= 40) return 'bg-cyan-500 shadow-sm'
+    return 'bg-emerald-600 shadow-sm'
   }
 
   const handleExport = () => {
@@ -48,7 +48,7 @@ export default function PeerBenchmarking() {
 
   return (
     <div className="p-6 max-w-[1700px] mx-auto space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-stone-200 pb-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200 pb-4">
         <div>
           <div className="flex items-center gap-3">
             <h1 className="page-title text-2xl font-bold tracking-tight">Cross-Sector Peer Benchmarking</h1>
@@ -66,18 +66,18 @@ export default function PeerBenchmarking() {
       </div>
 
       {/* Target Entity Selector Bar */}
-      <div className="flex flex-wrap items-center justify-between gap-3 bg-stone-100 p-3.5 rounded-lg border border-stone-200">
+      <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-100 p-3.5 rounded-lg border border-slate-200">
         <div className="flex flex-wrap items-center gap-3">
           <div className="label text-indigo-600 font-mono">Target Audit CSE:</div>
           <select 
-            className="select bg-white text-slate-700 border-stone-300 text-xs py-1.5"
+            className="select bg-white text-slate-700 border-slate-300 text-xs py-1.5"
             value={compEntity} 
             onChange={e => setCompEntity(e.target.value)}
           >
             {entitiesList.map(e => <option key={e.id} value={e.id}>{e.id} — {e.name}</option>)}
           </select>
           <span className="text-xs font-mono text-slate-400">vs</span>
-          <span className="text-xs font-mono text-slate-700 bg-white px-2.5 py-1 rounded border border-stone-200">
+          <span className="text-xs font-mono text-slate-700 bg-white px-2.5 py-1 rounded border border-slate-200">
             Sector Cohort Median (<strong className="text-indigo-600">{compSector}</strong>)
           </span>
         </div>
@@ -91,7 +91,7 @@ export default function PeerBenchmarking() {
       </div>
 
       <div className="card">
-        <div className="card-header border-b border-stone-200 pb-3 flex items-center justify-between">
+        <div className="card-header border-b border-slate-200 pb-3 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <BarChart3 className="w-4 h-4 text-indigo-600" />
             <div className="card-title">Percentile Stratification ({compEntity} vs {compSector} Baseline)</div>
@@ -107,14 +107,14 @@ export default function PeerBenchmarking() {
           ) : (
             <div className="space-y-4">
               {benchmarkData.map((m: any, i: number) => (
-                <div key={i} className="grid grid-cols-1 md:grid-cols-[220px_1fr_100px_100px_80px] items-center gap-4 bg-white p-3.5 rounded-lg border border-stone-200 hover:border-stone-300 transition-colors">
+                <div key={i} className="grid grid-cols-1 md:grid-cols-[220px_1fr_100px_100px_80px] items-center gap-4 bg-white p-3.5 rounded-lg border border-slate-200 hover:border-slate-300 transition-colors">
                   <div>
                     <div className="text-xs font-bold text-slate-700">{m.metric}</div>
                     <div className="text-[10.5px] font-mono text-slate-600 mt-0.5">{m.assessment || 'Variance detected'}</div>
                   </div>
 
                   <div className="space-y-1">
-                    <div className="risk-bar-track h-2 bg-cyber-900">
+                    <div className="risk-bar-track h-2 bg-slate-100">
                       <div className={`risk-bar-fill ${getBarColor(m.percentile)}`} style={{ width: `${Math.min(100, Math.max(5, m.percentile))}%` }} />
                     </div>
                     <div className="flex justify-between text-[9.5px] font-mono text-slate-400">
@@ -148,11 +148,11 @@ export default function PeerBenchmarking() {
           )}
 
           {!loading && benchmarkData.length > 0 && (
-            <div className="mt-6 pt-5 border-t border-stone-200">
+            <div className="mt-6 pt-5 border-t border-slate-200">
               <div className="label mb-3 text-indigo-600 font-mono">Statistical Outlier Detections (&gt;2.5σ Deviation)</div>
               <div className="space-y-2">
                 {benchmarkData.filter((m: any) => m.percentile <= 15 || m.percentile >= 85).map((m: any, i: number) => (
-                  <div key={i} className="flex items-center gap-3 p-2.5 rounded-md bg-white border border-stone-200 text-xs">
+                  <div key={i} className="flex items-center gap-3 p-2.5 rounded-md bg-white border border-slate-200 text-xs">
                     <span className={`badge border text-[10px] font-mono ${
                       m.percentile >= 85 
                         ? 'bg-rose-50 text-rose-600 border-rose-200' 

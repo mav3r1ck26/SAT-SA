@@ -101,54 +101,6 @@ export function getFindingTypeColor(type: string): string {
   }
 }
 
-export function formatNumber(num: number): string {
-  return new Intl.NumberFormat().format(num);
-}
-
-export function formatPercent(value: number): string {
-  return `${(value * 100).toFixed(1)}%`;
-}
-
-export function formatDuration(minutes: number): string {
-  if (minutes < 60) return `${minutes} min`;
-  const hours = Math.floor(minutes / 60);
-  const mins = minutes % 60;
-  return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`;
-}
-
-export function formatDate(date: string | Date): string {
-  const d = new Date(date);
-  return d.toLocaleDateString('en-GB', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-}
-
-export function formatDateShort(date: string | Date): string {
-  const d = new Date(date);
-  return d.toLocaleDateString('en-GB', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-  });
-}
-
-export function formatTime(date: string | Date): string {
-  const d = new Date(date);
-  return d.toLocaleTimeString('en-GB', {
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-}
-
-export function truncate(str: string, length: number): string {
-  if (str.length <= length) return str;
-  return str.slice(0, length) + '…';
-}
-
 const RATING_CONFIG: Record<string, { thresholds: Array<{ threshold: number; rating: string }>; direction?: 'higher_better' }> = {
   false_positive_rate: { thresholds: [{ threshold: 0.05, rating: 'Excellent' }, { threshold: 0.15, rating: 'Good' }, { threshold: 0.3, rating: 'Needs Improvement' }, { threshold: 1, rating: 'Critical' }] },
   incorrect_classification_ratio: { thresholds: [{ threshold: 0.05, rating: 'Excellent' }, { threshold: 0.1, rating: 'Good' }, { threshold: 0.2, rating: 'Needs Improvement' }, { threshold: 1, rating: 'Critical' }] },
@@ -190,13 +142,6 @@ const EFFICIENCY_INTERPRETATIONS: Record<string, { thresholds: Array<{ threshold
   signature_age_days: { thresholds: [{ threshold: 30, rating: 'Excellent' }, { threshold: 90, rating: 'Good' }, { threshold: 180, rating: 'Needs Improvement' }, { threshold: 9999, rating: 'Critical' }], unit: 'days', direction: 'lower_better' },
   playbook_gap_ratio: { thresholds: [{ threshold: 0.1, rating: 'Excellent' }, { threshold: 0.3, rating: 'Good' }, { threshold: 0.5, rating: 'Needs Improvement' }, { threshold: 1, rating: 'Critical' }], unit: '%', direction: 'lower_better' },
 };
-
-export function getConfidenceLabel(confidence: number): string {
-  if (confidence >= 0.9) return 'Very High';
-  if (confidence >= 0.75) return 'High';
-  if (confidence >= 0.6) return 'Medium';
-  return 'Low';
-}
 
 export function formatValue(target: string, value: number): string {
   const config = EFFICIENCY_INTERPRETATIONS[target];

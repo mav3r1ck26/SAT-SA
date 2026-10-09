@@ -40,19 +40,19 @@ export default function AlertAnalytics() {
 
   return (
     <div className="p-6 max-w-[1700px] mx-auto space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-cyber-800 pb-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200 pb-4">
         <div>
           <div className="flex items-center gap-3">
             <h1 className="page-title text-2xl font-bold tracking-tight">Alert Operations & Lifecycle Telemetry</h1>
             <TelemetryPulse active status="online" label="SIEM / EDR INGESTION STREAM" />
           </div>
-          <p className="page-subtitle text-cyber-400 mt-0.5">
+          <p className="page-subtitle text-slate-500 mt-0.5">
             Operational triage analysis, acknowledgement velocity, suppression integrity, and critical closure audits
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={handleExport} className="btn btn-sm flex items-center gap-1.5 text-cyber-300 hover:text-cyber-100">
-            <Download className="w-3.5 h-3.5 text-neonCyan" /> Export Alert Metrics
+          <button onClick={handleExport} className="btn btn-sm flex items-center gap-1.5 text-slate-600 hover:text-slate-800">
+            <Download className="w-3.5 h-3.5 text-indigo-600" /> Export Alert Metrics
           </button>
         </div>
       </div>
@@ -70,10 +70,10 @@ export default function AlertAnalytics() {
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
         <div className="lg:col-span-8 card p-5">
           <div className="label mb-3 flex items-center justify-between">
-            <span className="flex items-center gap-2 text-cyber-200 font-bold">
-              <Layers className="w-4 h-4 text-neonCyan" /> Monthly Multi-Vector Ingestion Volume by Severity
+            <span className="flex items-center gap-2 text-slate-700 font-bold">
+              <Layers className="w-4 h-4 text-indigo-600" /> Monthly Multi-Vector Ingestion Volume by Severity
             </span>
-            <span className="text-[10px] font-mono text-cyber-400">HISTORICAL TELEMETRY</span>
+            <span className="text-[10px] font-mono text-slate-500">HISTORICAL TELEMETRY</span>
           </div>
           <MultiBar
             data={volumeByMonth.map((d: any) => ({ label: d.month || d.label, critical: d.critical, high: d.high, medium: d.medium, low: d.low }))}
@@ -89,8 +89,8 @@ export default function AlertAnalytics() {
 
         <div className="lg:col-span-4 card p-5 flex flex-col items-center justify-center">
           <div className="label mb-3 w-full flex items-center justify-between">
-            <span className="text-cyber-200 font-bold">Severity Breakdown</span>
-            <span className="text-[10px] font-mono text-cyber-400">PROPORTION</span>
+            <span className="text-slate-700 font-bold">Severity Breakdown</span>
+            <span className="text-[10px] font-mono text-slate-500">PROPORTION</span>
           </div>
           <div className="flex justify-center my-auto">
             <Donut
@@ -110,8 +110,8 @@ export default function AlertAnalytics() {
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
         <div className="lg:col-span-4 card p-5 flex flex-col items-center justify-center">
           <div className="label mb-3 w-full flex items-center justify-between">
-            <span className="text-cyber-200 font-bold">Final Alert Disposition</span>
-            <span className="text-[10px] font-mono text-neonCyan">TRIAGE VERDICT</span>
+            <span className="text-slate-700 font-bold">Final Alert Disposition</span>
+            <span className="text-[10px] font-mono text-indigo-600">TRIAGE VERDICT</span>
           </div>
           <div className="flex justify-center my-auto">
             <Donut
@@ -128,20 +128,20 @@ export default function AlertAnalytics() {
 
         <div className="lg:col-span-8 card p-5">
           <div className="label mb-3 flex items-center justify-between">
-            <span className="flex items-center gap-2 text-cyber-200 font-bold">
-              <Clock className="w-4 h-4 text-neonCyan" /> SOC Alert Lifecycle Latency Benchmarks
+            <span className="flex items-center gap-2 text-slate-700 font-bold">
+              <Clock className="w-4 h-4 text-indigo-600" /> SOC Alert Lifecycle Latency Benchmarks
             </span>
-            <span className="text-[10px] font-mono text-cyber-400">MEAN TIME (MINUTES)</span>
+            <span className="text-[10px] font-mono text-slate-500">MEAN TIME (MINUTES)</span>
           </div>
           <div className="space-y-3.5 mt-2">
             {lifecycle.map((d: any, i: number) => (
-              <div key={i} className="bg-cyber-950/70 p-3 rounded-lg border border-cyber-800">
+              <div key={i} className="bg-slate-50/70 p-3 rounded-lg border border-slate-200">
                 <div className="flex justify-between items-center mb-1.5">
-                  <span className="text-xs font-semibold text-cyber-200">{d.stage}</span>
-                  <span className="font-mono text-xs font-bold text-neonCyan">{d.meanMin} min</span>
+                  <span className="text-xs font-semibold text-slate-700">{d.stage}</span>
+                  <span className="font-mono text-xs font-bold text-indigo-600">{d.meanMin} min</span>
                 </div>
-                <div className="risk-bar-track h-2 bg-cyber-900">
-                  <div className="risk-bar-fill bg-cyan-500 shadow-glow-cyan" style={{ width: `${Math.min(100, (d.meanMin / 60) * 100)}%` }} />
+                <div className="risk-bar-track h-2 bg-slate-100">
+                  <div className="risk-bar-fill bg-cyan-500 shadow-sm" style={{ width: `${Math.min(100, (d.meanMin / 60) * 100)}%` }} />
                 </div>
               </div>
             ))}
@@ -153,8 +153,8 @@ export default function AlertAnalytics() {
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
         <div className="lg:col-span-6 card p-5">
           <div className="label mb-3 flex items-center justify-between">
-            <span className="text-cyber-200 font-bold">Alert-to-Case Escalation Ratio</span>
-            <span className="text-[10px] font-mono text-cyber-400">BY ASSET DOMAIN</span>
+            <span className="text-slate-700 font-bold">Alert-to-Case Escalation Ratio</span>
+            <span className="text-[10px] font-mono text-slate-500">BY ASSET DOMAIN</span>
           </div>
           <div className="table-wrap">
             <table className="data-table">
@@ -169,10 +169,10 @@ export default function AlertAnalytics() {
               <tbody>
                 {conversionData.map((c: any, i: number) => (
                   <tr key={i}>
-                    <td className="text-xs font-medium text-cyber-100">{c.category}</td>
-                    <td className="font-mono text-xs text-cyber-300 text-right">{(c.alerts ?? 0).toLocaleString()}</td>
-                    <td className="font-mono text-xs text-cyber-300 text-right">{(c.cases ?? 0).toLocaleString()}</td>
-                    <td className="font-mono text-xs font-bold text-neonCyan text-right">{c.rate}%</td>
+                    <td className="text-xs font-medium text-slate-800">{c.category}</td>
+                    <td className="font-mono text-xs text-slate-600 text-right">{(c.alerts ?? 0).toLocaleString()}</td>
+                    <td className="font-mono text-xs text-slate-600 text-right">{(c.cases ?? 0).toLocaleString()}</td>
+                    <td className="font-mono text-xs font-bold text-indigo-600 text-right">{c.rate}%</td>
                   </tr>
                 ))}
               </tbody>
@@ -182,18 +182,18 @@ export default function AlertAnalytics() {
 
         <div className="lg:col-span-6 card p-5">
           <div className="label mb-3 flex items-center justify-between">
-            <span className="text-cyber-200 font-bold">Top Repeat Alert Triggering Assets</span>
-            <span className="text-[10px] font-mono text-neonAmber">NOISY SENSORS</span>
+            <span className="text-slate-700 font-bold">Top Repeat Alert Triggering Assets</span>
+            <span className="text-[10px] font-mono text-amber-700">NOISY SENSORS</span>
           </div>
           <div className="space-y-3 mt-2">
             {repeatAlerts.map((a: any, i: number) => (
-              <div key={i} className="bg-cyber-950/70 p-3 rounded-lg border border-cyber-800">
+              <div key={i} className="bg-slate-50/70 p-3 rounded-lg border border-slate-200">
                 <div className="flex justify-between items-center mb-1.5">
-                  <span className="mono-id text-neonCyan">{a.asset}</span>
-                  <span className="font-mono text-xs font-bold text-neonAmber">{a.count} occurrences</span>
+                  <span className="mono-id text-indigo-600">{a.asset}</span>
+                  <span className="font-mono text-xs font-bold text-amber-700">{a.count} occurrences</span>
                 </div>
-                <div className="risk-bar-track h-2 bg-cyber-900">
-                  <div className="risk-bar-fill bg-neonAmber" style={{ width: `${Math.min(100, (a.count / 70) * 100)}%` }} />
+                <div className="risk-bar-track h-2 bg-slate-100">
+                  <div className="risk-bar-fill bg-amber-500" style={{ width: `${Math.min(100, (a.count / 70) * 100)}%` }} />
                 </div>
               </div>
             ))}
@@ -204,8 +204,8 @@ export default function AlertAnalytics() {
       {/* Critical Alert Closure Patterns */}
       <div className="card p-5">
         <div className="label mb-3 flex items-center justify-between">
-          <span className="flex items-center gap-2 text-cyber-200 font-bold">
-            <Flame className="w-4 h-4 text-neonRose" /> Critical Alert Anomalous Closure Patterns
+          <span className="flex items-center gap-2 text-slate-700 font-bold">
+            <Flame className="w-4 h-4 text-rose-700" /> Critical Alert Anomalous Closure Patterns
           </span>
           <span className="badge badge-danger text-xs font-mono">POTENTIAL AUDIT DEFECT</span>
         </div>

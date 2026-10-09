@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
-import { useApp } from '../../context/AppContext';
-import { fetchBenchmark, fetchEntities } from '../../api/client';
+import { useNavigate } from 'react-router-dom';
+import { fetchBenchmark, fetchEntities } from '../api/client';
 
 export default function PeerBenchmarking() {
-  const { setSelectedEntity, setCurrentPage } = useApp();
+  const navigate = useNavigate();
   const [compEntity, setCompEntity] = useState('CSE-014');
   const [entitiesList, setEntities] = useState<any[]>([]);
   const [benchmarkData, setBenchmarkData] = useState<any[]>([]);
@@ -42,7 +42,7 @@ export default function PeerBenchmarking() {
         <span className="text-[12px] text-slate-400">vs</span>
         <span className="text-[12px] font-medium text-slate-700">Sector Median ({compSector})</span>
         <div className="flex-1" />
-        <button className="btn btn-sm" onClick={() => { setSelectedEntity(compEntity); setCurrentPage('entity') }}>View Entity Profile</button>
+        <button className="btn btn-sm" onClick={() => navigate(`/entity/${encodeURIComponent(compEntity)}`)}>View Entity Profile</button>
       </div>
 
       <div className="card">

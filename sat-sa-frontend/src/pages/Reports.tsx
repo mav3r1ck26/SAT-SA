@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { fetchReports, generateReport } from '../../api/client';
+import { fetchReports, generateReport } from '../api/client';
 import { FileText, Clock, CheckCircle2, Loader2, FileDown } from 'lucide-react';
 
 export default function Reports() {
@@ -60,11 +60,12 @@ export default function Reports() {
                   </span>
                 </div>
               </div>
+            </div>
             <div className="flex items-center gap-2 mt-4 pt-3 border-t border-slate-100">
               <button className="btn btn-primary btn-sm" disabled={generating === r.id} onClick={() => handleGenerate(r.id)}>
                 {generating === r.id ? 'Generating...' : 'Generate Report'}
               </button>
-              {r.format.map(f => (
+              {r.format.map((f: string) => (
                 <button key={f} className="btn btn-sm" disabled={r.status !== 'Available'}>
                   <FileDown className="w-3 h-3" />
                   Export {f}

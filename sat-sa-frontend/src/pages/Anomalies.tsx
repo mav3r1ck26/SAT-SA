@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import { fetchAnomalies } from '../../api/client';
+import { fetchAnomalies } from '../api/client';
 import StatCard from '../components/StatCard';
-import { AlertTriangle } from 'lucide-react';
+import { cn } from '../lib/utils';
 
 export default function Anomalies() {
   const [data, setData] = useState<any>(null);
@@ -10,10 +10,10 @@ export default function Anomalies() {
     fetchAnomalies().then(setData).catch(() => {});
   }, []);
 
-  const anomalies = data?.anomalies ?? [];
-  const volumeSpikes = anomalies.filter(a => a.type === 'VOLUME_SPIKE').length;
-  const durationAnomalies = anomalies.filter(a => a.type === 'DURATION_ANOMALY').length;
-  const lowEvidenceAnomalies = anomalies.filter(a => a.type === 'LOW_EVIDENCE').length;
+  const anomalies: any[] = Array.isArray(data) ? data : data?.anomalies ?? [];
+  const volumeSpikes = anomalies.filter((a: any) => a.type === 'VOLUME_SPIKE').length;
+  const durationAnomalies = anomalies.filter((a: any) => a.type === 'DURATION_ANOMALY').length;
+  const lowEvidenceAnomalies = anomalies.filter((a: any) => a.type === 'LOW_EVIDENCE').length;
 
   return (
     <div className="p-6 max-w-[1600px] mx-auto">
@@ -40,7 +40,7 @@ export default function Anomalies() {
               <tr><th>Type</th><th>Entity</th><th>Case</th><th>Severity</th><th>Confidence</th><th>Description</th><th>Anomaly Score</th></tr>
             </thead>
             <tbody>
-              {anomalies.map((a, i) => (
+              {anomalies.map((a: any, i: number) => (
                 <tr key={i}>
                   <td><span className={cn('badge border text-[10.5px]', a.type === 'VOLUME_SPIKE' ? 'bg-blue-50 text-blue-700 border-blue-200' : a.type === 'DURATION_ANOMALY' ? 'bg-purple-50 text-purple-700 border-purple-200' : 'bg-amber-50 text-amber-700 border-amber-200')}>{a.type}</span></td>
                   <td className="mono-id">{a.entityId}</td>

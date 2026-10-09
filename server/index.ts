@@ -15,9 +15,10 @@ import ingestionRouter from './routes/ingestion'
 import evidenceRouter from './routes/evidence'
 import validationRouter from './routes/validation'
 import mlRouter from './routes/ml'
+import configurationRouter from './routes/configuration'
 
 const app = express()
-const PORT = process.env.API_PORT || 3101
+const PORT = process.env.API_PORT || 3500
 
 // Middleware
 app.use(cors())
@@ -48,6 +49,7 @@ app.use('/api/ingestion', ingestionRouter)
 app.use('/api/evidence', evidenceRouter)
 app.use('/api/validation', validationRouter)
 app.use('/api/ml', mlRouter)
+app.use('/api/configuration', configurationRouter)
 
 // Start
 async function main() {

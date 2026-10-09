@@ -40,7 +40,6 @@ export default function ExecutionGaps() {
     return true
   })
 
-  const finding = findings.find(f => f.id === selected)
   const highConfidence = findings.filter(f => (f.confidence ?? 0) >= 90).length
   const criticalFindings = findings.filter(f => f.severity === 'Critical').length
   const entitiesAffected = new Set(findings.map(f => f.entityId)).size
@@ -71,7 +70,7 @@ export default function ExecutionGaps() {
 
   return (
     <div className="p-6 max-w-[1700px] mx-auto space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-stone-200 pb-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200 pb-4">
         <div>
           <div className="flex items-center gap-3">
             <h1 className="page-title text-2xl font-bold tracking-tight">Execution Gap Findings</h1>
@@ -115,7 +114,7 @@ export default function ExecutionGaps() {
       </div>
 
       <div className="card overflow-hidden">
-        <div className="card-header border-b border-stone-200 pb-3 flex flex-wrap items-center justify-between gap-3">
+        <div className="card-header border-b border-slate-200 pb-3 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <ShieldAlert className="w-4 h-4 text-rose-600" />
             <div className="card-title">Active Supervisory Findings Registry</div>
@@ -126,7 +125,7 @@ export default function ExecutionGaps() {
             <div className="relative">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
               <input 
-                className="input pl-8 py-1 text-xs w-48 bg-stone-50 border-stone-300 text-slate-800 placeholder-slate-400 focus:border-indigo-600"
+                className="input pl-8 py-1 text-xs w-48 bg-slate-50 border-slate-300 text-slate-800 placeholder-slate-400 focus:border-indigo-600"
                 placeholder="Search findings..."
                 value={search}
                 onChange={e => setSearch(e.target.value)}
@@ -137,7 +136,7 @@ export default function ExecutionGaps() {
             <div className="flex items-center gap-1.5">
               <Filter className="w-3.5 h-3.5 text-slate-500" />
               <select 
-                className="select bg-stone-50 border-stone-300 text-slate-700 text-xs py-1"
+                className="select bg-slate-50 border-slate-300 text-slate-700 text-xs py-1"
                 value={filterSeverity}
                 onChange={e => setFilterSeverity(e.target.value)}
               >
@@ -150,7 +149,7 @@ export default function ExecutionGaps() {
 
             {/* Status Filter */}
             <select 
-              className="select bg-stone-50 border-stone-300 text-slate-700 text-xs py-1"
+              className="select bg-slate-50 border-slate-300 text-slate-700 text-xs py-1"
               value={filterStatus}
               onChange={e => setFilterStatus(e.target.value)}
             >
@@ -181,9 +180,9 @@ export default function ExecutionGaps() {
             </thead>
             <tbody>
               {filtered.map(f => (
+                <React.Fragment key={f.id}>
                 <tr 
-                  key={f.id} 
-                  className={`cursor-pointer transition-colors ${selected === f.id ? 'bg-stone-100 border-l-2 border-l-indigo-500' : 'hover:bg-stone-100'}`}
+                  className={`cursor-pointer transition-colors ${selected === f.id ? 'bg-slate-100 border-l-2 border-l-indigo-500' : 'hover:bg-slate-100'}`}
                   onClick={() => setSelected(selected === f.id ? null : f.id)}
                 >
                   <td className="mono-id text-indigo-600 font-bold">{f.id}</td>
@@ -206,7 +205,7 @@ export default function ExecutionGaps() {
                         ? 'bg-rose-50 text-rose-600 border-rose-200'
                         : f.status === 'In Review' 
                         ? 'bg-indigo-50 text-indigo-600 border-indigo-200' 
-                        : 'bg-white text-slate-500 border-stone-300'
+                        : 'bg-white text-slate-500 border-slate-300'
                     }`}>
                       {f.status || 'New'}
                     </span>
@@ -214,6 +213,11 @@ export default function ExecutionGaps() {
                   <td className="text-right">
                     <button 
                       className="text-xs font-mono text-indigo-600 hover:text-slate-900 flex items-center gap-1 ml-auto"
+                      aria-expanded={selected === f.id}
+                      onClick={event => {
+                        event.stopPropagation()
+                        setSelected(selected === f.id ? null : f.id)
+                      }}
                     >
                       {selected === f.id ? (
                         <>Collapse <ChevronUp className="w-3.5 h-3.5" /></>
@@ -223,6 +227,30 @@ export default function ExecutionGaps() {
                     </button>
                   </td>
                 </tr>
+                {selected === f.id && (
+                  <tr className="bg-slate-50">
+                    <td colSpan={10} className="p-4">
+                      <FindingExplanation
+                        id={f.id}
+                        entityId={f.entityId}
+                        finding={`${f.id} — ${f.title || f.finding}`}
+                        severity={f.severity}
+                        confidence={f.confidence}
+                        whyMatters={f.whyItMatters || f.description}
+                        evidence={{ cases: f.evidenceCount ?? 0, criticalAlerts: f.severity === 'Critical' ? (f.evidenceCount ?? 0) : 0, escalationRecords: 0 }}
+                        peerComparison={f.peerComparison || 'Peer comparison unavailable'}
+                        detectionLogic={f.detectionLogic || f.methodology || 'Behavioral heuristic divergence calculation'}
+                        limitations={f.limitations || 'Heuristic indicator requiring statutory examiner confirmation.'}
+                        mitre={f.mitreTechnique || 'T1059'}
+                        status={f.status}
+                        examinerNote={f.examinerNote}
+                        reviewedBy={f.reviewedBy}
+                        onUpdate={loadFindings}
+                      />
+                    </td>
+                  </tr>
+                )}
+                </React.Fragment>
               ))}
               {filtered.length === 0 && (
                 <tr>
@@ -236,29 +264,6 @@ export default function ExecutionGaps() {
         </div>
       </div>
 
-      {finding && (
-        <FindingExplanation
-          id={finding.id}
-          entityId={finding.entityId}
-          finding={`${finding.id} — ${finding.title || finding.finding}`}
-          severity={finding.severity}
-          confidence={finding.confidence}
-          whyMatters={finding.whyItMatters || finding.description}
-          evidence={{ 
-            cases: finding.evidenceCount ?? 0, 
-            criticalAlerts: finding.severity === 'Critical' ? (finding.evidenceCount ?? 0) : 0, 
-            escalationRecords: 0 
-          }}
-          peerComparison={finding.peerComparison || '42% below peer median'}
-          detectionLogic={finding.detectionLogic || finding.methodology || 'Behavioral heuristic divergence calculation'}
-          limitations={finding.limitations || 'Heuristic indicator requiring statutory examiner confirmation.'}
-          mitre={finding.mitreTechnique || 'T1059'}
-          status={finding.status}
-          examinerNote={finding.examinerNote}
-          reviewedBy={finding.reviewedBy}
-          onUpdate={loadFindings}
-        />
-      )}
     </div>
   )
 }

@@ -51,7 +51,7 @@ export default function FindingExplanation({
   reviewedBy: initialReviewer = '',
   onUpdate
 }: ExplanationProps) {
-  const { setCurrentPage, setSelectedEntity } = useApp()
+  const { setCurrentPage, setSelectedEntity, setSelectedFindingId } = useApp()
   const [currentStatus, setCurrentStatus] = useState(initialStatus)
   const [examinerNote, setExaminerNote] = useState(initialNote)
   const [noteInput, setNoteInput] = useState(initialNote)
@@ -121,18 +121,15 @@ export default function FindingExplanation({
   }
 
   const handleViewEvidence = () => {
-    if (entityId) {
-      setSelectedEntity(entityId)
-      setCurrentPage('entity')
-    } else {
-      setCurrentPage('evidence')
-    }
+    if (entityId) setSelectedEntity(entityId)
+    setSelectedFindingId(id || null)
+    setCurrentPage('evidence')
   }
 
   return (
-    <div className={`card ${compact ? '' : 'p-5'} border-stone-300 bg-white shadow-sm`}>
+    <div className={`card ${compact ? '' : 'p-5'} border-slate-300 bg-white shadow-sm`}>
       {!compact && (
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 pb-3 border-b border-stone-200">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 pb-3 border-b border-slate-200">
           <div>
             <div className="flex items-center gap-2 mb-1">
               <span className="label text-indigo-600 font-mono">Forensic Finding Dossier</span>
@@ -155,7 +152,7 @@ export default function FindingExplanation({
           <div className="flex items-center gap-3">
             <MitreBadge techniqueId={mitre} name={mitre} />
             <SeverityBadge severity={severity} />
-            <div className="bg-white px-3 py-1 rounded border border-stone-200 text-right">
+            <div className="bg-white px-3 py-1 rounded border border-slate-200 text-right">
               <div className="text-[9.5px] uppercase font-mono text-slate-500">Confidence</div>
               <span className="font-mono text-sm font-bold text-indigo-600">{confidence}%</span>
             </div>
@@ -163,7 +160,7 @@ export default function FindingExplanation({
         </div>
       )}
 
-      <div className={`${compact ? 'border-t border-stone-200 mt-3 pt-3' : ''} space-y-4`}>
+      <div className={`${compact ? 'border-t border-slate-200 mt-3 pt-3' : ''} space-y-4`}>
         {feedback && (
           <div className="flex items-center gap-2 p-3 bg-indigo-50 border border-indigo-200 rounded-md text-xs font-mono text-indigo-600">
             <Check className="w-4 h-4 text-indigo-600 shrink-0" />
@@ -173,29 +170,29 @@ export default function FindingExplanation({
 
         <div>
           <div className="label mb-1 text-slate-600">Supervisory Risk Implications</div>
-          <p className="text-xs text-slate-700 leading-relaxed bg-stone-50 p-3 rounded-md border border-stone-200">
+          <p className="text-xs text-slate-700 leading-relaxed bg-slate-50 p-3 rounded-md border border-slate-200">
             {whyMatters}
           </p>
         </div>
 
         {/* 4 Forensic Evidence Stats */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-          <div className="bg-stone-50 rounded-md p-3 border border-stone-200">
+          <div className="bg-slate-50 rounded-md p-3 border border-slate-200">
             <div className="label mb-1 text-slate-500">Associated Cases</div>
             <div className="font-mono text-lg font-bold text-slate-800">{evidence.cases}</div>
             <div className="text-[10px] text-slate-400 font-mono">SOC Ingested</div>
           </div>
-          <div className="bg-stone-50 rounded-md p-3 border border-stone-200">
+          <div className="bg-slate-50 rounded-md p-3 border border-slate-200">
             <div className="label mb-1 text-slate-500">Critical Alerts</div>
             <div className="font-mono text-lg font-bold text-amber-600">{evidence.criticalAlerts}</div>
             <div className="text-[10px] text-slate-400 font-mono">Raw telemetry</div>
           </div>
-          <div className="bg-stone-50 rounded-md p-3 border border-rose-200 bg-rose-50">
+          <div className="bg-slate-50 rounded-md p-3 border border-rose-200 bg-rose-50">
             <div className="label mb-1 text-rose-600 font-semibold">Escalation Gaps</div>
             <div className="font-mono text-lg font-bold text-rose-600">{evidence.escalationRecords}</div>
             <div className="text-[10px] text-rose-600 font-mono">Missing actions</div>
           </div>
-          <div className="bg-stone-50 rounded-md p-3 border border-indigo-200 bg-indigo-50">
+          <div className="bg-slate-50 rounded-md p-3 border border-indigo-200 bg-indigo-50">
             <div className="label mb-1 text-indigo-600 font-semibold">Peer Baseline Delta</div>
             <div className="text-xs font-bold text-indigo-600 mt-1 truncate">{peerComparison}</div>
             <div className="text-[10px] text-slate-500 font-mono">Sector median</div>
@@ -207,7 +204,7 @@ export default function FindingExplanation({
           <div className="label mb-1 text-slate-600 flex items-center gap-1.5">
             <Cpu className="w-3.5 h-3.5 text-indigo-600" /> Supervisory Detection Logic (Deterministic & ML Ensemble)
           </div>
-          <div className="text-xs font-mono text-slate-600 bg-white p-3 rounded-md border border-stone-200 leading-relaxed">
+          <div className="text-xs font-mono text-slate-600 bg-white p-3 rounded-md border border-slate-200 leading-relaxed">
             <span className="text-slate-400 select-none">$ [AUDIT_RULE] </span>
             {detectionLogic}
           </div>
@@ -225,7 +222,7 @@ export default function FindingExplanation({
 
         {/* Examiner Note Display & Editor */}
         {examinerNote && !showNoteEditor && (
-          <div className="p-3 bg-stone-50 rounded-md border border-emerald-200 space-y-1">
+          <div className="p-3 bg-slate-50 rounded-md border border-emerald-200 space-y-1">
             <div className="flex items-center justify-between">
               <span className="label text-emerald-600 font-mono flex items-center gap-1.5">
                 <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> Signed Examiner Finding Note
@@ -237,17 +234,17 @@ export default function FindingExplanation({
                 <Edit3 className="w-3 h-3" /> Edit Note
               </button>
             </div>
-            <p className="text-xs text-slate-700 font-mono bg-stone-50 p-2.5 rounded border border-stone-200">
+            <p className="text-xs text-slate-700 font-mono bg-slate-50 p-2.5 rounded border border-slate-200">
               "{examinerNote}"
             </p>
           </div>
         )}
 
         {showNoteEditor && (
-          <div className="p-3 bg-white rounded-md border border-stone-300 space-y-2">
+          <div className="p-3 bg-white rounded-md border border-slate-300 space-y-2">
             <div className="label text-indigo-600 font-mono">Sign Examiner Supervisory Note</div>
             <textarea
-              className="input w-full h-20 text-xs font-mono bg-white border-stone-300 text-slate-800 p-2 resize-none"
+              className="input w-full h-20 text-xs font-mono bg-white border-slate-300 text-slate-800 p-2 resize-none"
               placeholder="Enter official examination observation, legal finding reference, or CSE directive note..."
               value={noteInput}
               onChange={e => setNoteInput(e.target.value)}
@@ -272,7 +269,7 @@ export default function FindingExplanation({
         )}
 
         {!compact && (
-          <div className="flex flex-wrap items-center gap-2 pt-3 border-t border-stone-200">
+          <div className="flex flex-wrap items-center gap-2 pt-3 border-t border-slate-200">
             <button 
               onClick={handleViewEvidence}
               className="btn btn-primary btn-sm flex items-center gap-1.5 text-xs font-mono"

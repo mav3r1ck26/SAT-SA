@@ -1,11 +1,10 @@
 import { useEffect, useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
-import { ChevronLeft, AlertTriangle, Clock, Shield, Gap, Eye, TrendingUp, Target } from 'lucide-react';
-import { cn } from '../../lib/utils';
-import { fetchEntity, fetchFindings, fetchEvidenceTimeline } from '../../api/client';
-import { Entity } from '../../api/types';
-import { RiskScoreGauge, SeverityBadge, Confidence } from '../components/ui';
-import { Radar, ScoreBars } from '../components/charts';
+import { useParams } from 'react-router-dom';
+import { ChevronLeft } from 'lucide-react';
+import { cn } from '../lib/utils';
+import { fetchEntity, fetchFindings, fetchEvidenceTimeline } from '../api/client';
+import type { Entity } from '../api/types';
+import { Confidence } from '../components/ui';
 
 const tabs = ['Overview', 'Detection', 'Investigation', 'Escalation', 'Incident Response', 'Operations', 'Governance', 'Resilience', 'Evidence'];
 
@@ -13,7 +12,7 @@ export default function EntityProfile() {
   const { id } = useParams<{ id: string }>();
   const [entity, setEntity] = useState<Entity | null>(null);
   const [findings, setFindings] = useState<any[]>([]);
-  const [timeline, setTimeline] = useState<any[]>([]);
+  const [timelineData, setTimelineData] = useState<any[]>([]);
   const [activeTab, setActiveTab] = useState('Overview');
   const [loading, setLoading] = useState(true);
 
@@ -27,7 +26,7 @@ export default function EntityProfile() {
     ]).then(([entityData, findingsData, timelineData]) => {
       setEntity(entityData);
       setFindings(findingsData || []);
-      setTimeline(timelineData?.timeline || []);
+      setTimelineData(timelineData?.timeline || []);
       setLoading(false);
     }).catch(() => setLoading(false));
   }, [id]);
@@ -50,11 +49,7 @@ export default function EntityProfile() {
 
   const entityFindings = findings.filter(f => f.entityId === entity.id);
 
-  const openEntity = (entityId: string) => {
-    window.location.href = `/entity/${entityId}`;
-  };
-
-  const timeline = timeline.length > 0 ? timeline : [
+  const timeline = timelineData.length > 0 ? timelineData : [
     { event: 'Alert generated — firewall anomaly', actor: 'SIEM', role: 'Detection System', time: '14:23:17', meta: ['BRAC: alerts-tmal'], severity: 'Critical', entity: entity.id },
     { event: 'SOC analyst assigned', actor: 'SOC-L2-004', role: 'Analyst', time: '14:24:53', meta: [], severity: 'Low', entity: entity.id },
     { event: 'Preliminary investigation opened', actor: 'SOC-L2-004', role: 'Analyst', time: '14:26:09', meta: [], severity: 'Low', entity: entity.id },
@@ -206,7 +201,7 @@ export default function EntityProfile() {
                         <span className="mono text-[10px] ml-2 text-slate-400">{evt.time} {evt.time !== '—' ? 'IST' : ''}</span>
                       </div>
                       <div className="flex gap-2 mt-0.5">
-                        {evt.meta.map((m, j) => (
+                      {evt.meta.map((m: string, j: number) => (
                           <span key={j} className="text-[10.5px] text-slate-500 bg-slate-50 px-1.5 py-0.5 rounded">{m}</span>
                         ))}
                       </div>

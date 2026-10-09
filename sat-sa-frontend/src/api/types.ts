@@ -488,26 +488,6 @@ export interface AuditFilters {
   limit?: number;
 }
 
-export interface AnalyzeRequest {
-  alerts: Array<{
-    timestamp: string;
-    source_ip?: string;
-    dest_ip?: string;
-    source_port?: number;
-    dest_port?: number;
-    protocol?: string;
-    bytes_sent?: number;
-    bytes_received?: number;
-    packet_count?: number;
-    alert_description?: string;
-    user_agent?: string;
-    http_status?: number;
-    ticket_number?: string;
-    label?: number;
-  }>;
-  investigators?: string[];
-}
-
 export interface BatchInput {
   alerts: Array<{
     timestamp: string;

@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
-import { cn } from '../../lib/utils';
-import { fetchBlindSpots } from '../../api/client';
+import { fetchBlindSpots } from '../api/client';
 import StatCard from '../components/StatCard';
 import { AlertTriangle } from 'lucide-react';
 
@@ -15,10 +14,8 @@ const defaultData = [
 
 export default function NegativeSpace() {
   const [blindSpots, setBlindSpots] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-
   useEffect(() => {
-    fetchBlindSpots().then(setBlindSpots).catch(() => setBlindSpots([])).finally(() => setLoading(false));
+    fetchBlindSpots().then(setBlindSpots).catch(() => setBlindSpots([]));
   }, []);
 
   const spotCount = blindSpots.length || 13;

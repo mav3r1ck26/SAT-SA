@@ -45,15 +45,41 @@ export function downloadJSON(filename: string, data: any): void {
   URL.revokeObjectURL(url)
 }
 
-export function printDossier(title: string, sections: { heading: string; content: string | Record<string, any> }[]): void {
-  const printWindow = window.open('', '_blank', 'width=900,height=800')
+export function printDossier(title: string, sections: { heading: string; content: any }[], targetWindow?: Window | null): void {
+  const printWindow = targetWindow || window.open('', '_blank', 'width=900,height=800')
   if (!printWindow) return
+
+  const escapeHtml = (value: unknown): string => String(value ?? '')
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;')
+  const renderValue = (value: any): string => {
+    if (value === null || value === undefined) return '<span class="muted">—</span>'
+    if (Array.isArray(value)) {
+      if (value.length === 0) return '<p class="muted">No records in this section.</p>'
+      if (value.every(row => row && typeof row === 'object' && !Array.isArray(row))) {
+        const columns = [...new Set(value.flatMap(row => Object.keys(row)))]
+        return `<table><thead><tr>${columns.map(key => `<th>${escapeHtml(key)}</th>`).join('')}</tr></thead><tbody>${value.map(row => `<tr>${columns.map(key => `<td>${renderCell(row[key])}</td>`).join('')}</tr>`).join('')}</tbody></table>`
+      }
+      return `<ul>${value.map(item => `<li>${renderCell(item)}</li>`).join('')}</ul>`
+    }
+    if (typeof value === 'object') {
+      const entries = Object.entries(value)
+      if (!entries.length) return '<p class="muted">No details available.</p>'
+      return `<table class="key-value"><tbody>${entries.map(([key, item]) => `<tr><th>${escapeHtml(key)}</th><td>${renderCell(item)}</td></tr>`).join('')}</tbody></table>`
+    }
+    return `<p>${escapeHtml(value)}</p>`
+  }
+  const renderCell = (value: any): string => {
+    if (value === null || value === undefined || value === '') return '<span class="muted">—</span>'
+    if (typeof value === 'object') return `<code>${escapeHtml(JSON.stringify(value))}</code>`
+    return escapeHtml(value)
+  }
 
   const html = `
 <!DOCTYPE html>
 <html>
 <head>
-  <title>${title} — SAT-SA Examination Report</title>
+  <meta charset="utf-8"><title>${escapeHtml(title)} — SAT-SA Examination Report</title>
   <style>
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace; color: #111; padding: 30px; line-height: 1.5; }
     h1 { font-size: 20px; border-bottom: 2px solid #333; padding-bottom: 8px; margin-bottom: 4px; }
@@ -63,7 +89,12 @@ export function printDossier(title: string, sections: { heading: string; content
     table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 12px; }
     th, td { border: 1px solid #ddd; padding: 6px 10px; text-align: left; }
     th { background: #f7f7f7; font-weight: bold; }
-    pre { background: #f5f5f5; padding: 10px; border-radius: 4px; font-size: 11px; overflow-x: auto; white-space: pre-wrap; }
+    .key-value th { width: 28%; }
+    td { overflow-wrap: anywhere; }
+    ul { margin: 4px 0; padding-left: 20px; font-size: 12px; }
+    p { font-size: 12px; }
+    code { font-size: 10px; white-space: pre-wrap; }
+    .muted { color: #777; }
     .footer { margin-top: 30px; font-size: 10px; color: #888; border-top: 1px solid #ddd; padding-top: 8px; }
     @media print {
       body { padding: 10px; }
@@ -72,22 +103,14 @@ export function printDossier(title: string, sections: { heading: string; content
   </style>
 </head>
 <body>
-  <h1>${title}</h1>
+  <h1>${escapeHtml(title)}</h1>
   <div class="badge">NATIONAL CRITICAL INFRASTRUCTURE PROTECTION CENTRE // SUPERVISORY ASSESSMENT TOOL (SAT-SA)</div>
-  <p style="font-size: 11px; color: #666; margin-top: -8px;">Generated on ${new Date().toLocaleString()} IST · Air-gap Sovereign Node</p>
+  <p style="font-size: 11px; color: #666; margin-top: -8px;">Generated on ${escapeHtml(new Date().toLocaleString())} · Air-gap Sovereign Node</p>
   
   ${sections.map(s => `
     <div class="section">
       <div class="section-title">${s.heading}</div>
-      ${typeof s.content === 'string' 
-        ? `<p style="font-size: 12px;">${s.content}</p>` 
-        : Array.isArray(s.content)
-        ? `<table>
-            <thead><tr>${Object.keys(s.content[0] || {}).map(k => `<th>${k}</th>`).join('')}</tr></thead>
-            <tbody>${s.content.map(row => `<tr>${Object.values(row).map(v => `<td>${typeof v === 'object' ? JSON.stringify(v) : v}</td>`).join('')}</tr>`).join('')}</tbody>
-          </table>`
-        : `<pre>${JSON.stringify(s.content, null, 2)}</pre>`
-      }
+      ${renderValue(s.content)}
     </div>
   `).join('')}
 

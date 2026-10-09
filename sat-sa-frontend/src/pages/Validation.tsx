@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { fetchValidation } from '../../api/client';
+import { fetchValidation } from '../api/client';
 
 export default function Validation() {
   const [metrics, setMetrics] = useState<any>(null);

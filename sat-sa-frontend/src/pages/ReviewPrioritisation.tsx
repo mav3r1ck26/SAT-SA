@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { fetchReviewQueue } from '../../api/client';
+import { fetchReviewQueue } from '../api/client';
 import { SeverityBadge, Confidence } from '../components/ui';
 
 export default function ReviewPrioritisation() {
@@ -41,7 +41,7 @@ export default function ReviewPrioritisation() {
               <div className="bg-slate-50 rounded-md px-3 py-2 mb-3">
                 <div className="label mb-1">Why flagged</div>
                 <ul className="flex flex-col gap-0.5">
-                  {(item.reasons || item.reasonWrap || [item.reason]).filter(Boolean).map((r, j) => (
+                  {(item.reasons || item.reasonWrap || [item.reason]).filter(Boolean).map((r: any, j: number) => (
                     <li key={j} className="text-[12px] text-slate-600 flex items-center gap-1.5">
                       <span className="w-1 h-1 rounded-full bg-slate-400 shrink-0" />
                       {r}

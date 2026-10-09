@@ -1,17 +1,19 @@
-import { useState, useEffect, useMemo } from 'react';
-import { Link } from 'react-router-dom';
-import { Search, Download, ChevronRight, ChevronLeft } from 'lucide-react';
-import { cn } from '../../lib/utils';
-import { fetchEntities } from '../../api/client';
-import { Entity } from '../../api/types';
-import { StatusBadge, RiskScoreBar } from '../components/ui';
+import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { Search, Download } from 'lucide-react';
+import { fetchEntities } from '../api/client';
+import type { Entity } from '../api/types';
+import { RiskScoreBar } from '../components/ui';
+import { cn } from '../lib/utils';
+import { downloadCSV } from '../utils/export';
 
 export default function EntitiesList() {
+  const navigate = useNavigate();
   const [entities, setEntities] = useState<Entity[]>([]);
   const [search, setSearch] = useState('');
   const [sectorFilter, setSectorFilter] = useState('');
   const [criticalityFilter, setCriticalityFilter] = useState('');
-  const [sortKey, setSortKey] = useState<string>('riskScore');
+  const [sortKey, setSortKey] = useState<keyof Entity>('riskScore');
   const [sortAsc, setSortAsc] = useState(false);
   const [loading, setLoading] = useState(true);
 
@@ -25,11 +27,6 @@ export default function EntitiesList() {
     } finally {
       setLoading(false);
     }
-  };
-
-  const handleSort = (key: string) => {
-    if (sortKey === key) setSortAsc(a => !a);
-    else { setSortKey(key); setSortAsc(false); }
   };
 
   useEffect(() => {
@@ -47,17 +44,34 @@ export default function EntitiesList() {
       const dir = sortAsc ? 1 : -1;
       const aVal = a[sortKey];
       const bVal = b[sortKey];
-      if (typeof aVal === 'string') return aVal.localeCompare(bVal) * dir;
-      return ((aVal || 0) - (bVal || 0)) * dir;
+      if (typeof aVal === 'string') return aVal.localeCompare(String(bVal ?? '')) * dir;
+      return (Number(aVal || 0) - Number(bVal || 0)) * dir;
     });
 
-  const toggleSort = (key: string) => {
+  const toggleSort = (key: keyof Entity) => {
     if (sortKey === key) setSortAsc(a => !a);
     else { setSortKey(key); setSortAsc(false); }
   };
 
   const sectors = [...new Set(entities.map(e => e.sector))].sort();
   const criticalities = ['Critical', 'High', 'Medium', 'Low'];
+  const sortableColumns: Array<{ key: keyof Entity; label: string }> = [
+    { key: 'id', label: 'Entity' },
+    { key: 'name', label: 'Name' },
+    { key: 'sector', label: 'Sector' },
+    { key: 'criticality', label: 'Criticality' },
+    { key: 'riskScore', label: 'Risk Score' },
+    { key: 'executionGaps', label: 'Gaps' },
+    { key: 'negativeSpace', label: 'Neg. Space' },
+    { key: 'priority', label: 'Priority' },
+    { key: 'status', label: 'Status' },
+  ];
+
+  const exportEntities = () => downloadCSV('sat-sa-entities.csv', [
+    'Entity ID', 'Name', 'Sector', 'Criticality', 'Risk Score', 'Execution Gaps', 'Negative Space', 'Priority', 'Status',
+  ], filtered.map(e => [
+    e.id, e.name, e.sector, e.criticality, e.riskScore, e.executionGaps, e.negativeSpace, e.priority, e.status,
+  ]));
 
   return (
     <div className="p-6 max-w-[1600px] mx-auto">
@@ -66,7 +80,7 @@ export default function EntitiesList() {
           <h1 className="page-title">Entities</h1>
           <p className="page-subtitle">All assessed Critical Sector Entities</p>
         </div>
-        <button className="btn btn-sm"><Download className="w-3.5 h-3.5" /> Export CSV</button>
+        <button className="btn btn-sm" onClick={exportEntities}><Download className="w-3.5 h-3.5" /> Export CSV</button>
       </div>
 
       <div className="flex items-center gap-3 mb-4 mt-3">
@@ -97,17 +111,7 @@ export default function EntitiesList() {
             <table className="data-table">
               <thead>
                 <tr>
-                  {[
-                    { key: 'id', label: 'Entity' },
-                    { key: 'name', label: 'Name' },
-                    { key: 'sector', label: 'Sector' },
-                    { key: 'criticality', label: 'Criticality' },
-                    { key: 'riskScore', label: 'Risk Score' },
-                    { key: 'executionGaps', label: 'Gaps' },
-                    { key: 'negativeSpace', label: 'Neg. Space' },
-                    { key: 'priority', label: 'Priority' },
-                    { key: 'status', label: 'Status' }
-                  ].map(col => (
+                  {sortableColumns.map(col => (
                     <th 
                       key={col.key} 
                       className="cursor-pointer select-none"
@@ -125,18 +129,18 @@ export default function EntitiesList() {
               </thead>
               <tbody>
                 {filtered.map(e => (
-                  <tr key={e.id} className="cursor-pointer" onClick={() => window.location.href = `/entity/${e.id}`}>
+                  <tr key={e.id} className="cursor-pointer" onClick={() => navigate(`/entity/${encodeURIComponent(e.id)}`)}>
                     <td className="mono-id">{e.id}</td>
                     <td className="text-[12px] text-slate-700 font-medium">{e.name}</td>
                     <td className="text-[12px] text-slate-600">{e.sector}</td>
-                    <td><span className="badge border {e.criticality === 'Critical' ? 'bg-red-50 text-red-700 border-red-200' : e.criticality === 'High' ? 'bg-orange-50 text-orange-700 border-orange-200' : e.criticality === 'Medium' ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-blue-50 text-blue-700 border-blue-200'}">{e.criticality}</span></td>
+                    <td><span className={cn('badge border', e.criticality === 'Critical' ? 'bg-red-50 text-red-700 border-red-200' : e.criticality === 'High' ? 'bg-orange-50 text-orange-700 border-orange-200' : e.criticality === 'Medium' ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-blue-50 text-blue-700 border-blue-200')}>{e.criticality}</span></td>
                     <td>
                       <RiskScoreBar score={e.riskScore ?? 50} showLabel />
                     </td>
                     <td className="font-mono text-[12px] text-slate-600 text-center">{e.executionGaps}</td>
                     <td className="font-mono text-[12px] text-slate-600 text-center">{e.negativeSpace}</td>
-                    <td><span className="badge border {e.priority === 'Critical' ? 'bg-red-50 text-red-700 border-red-200' : e.priority === 'High' ? 'bg-orange-50 text-orange-700 border-orange-200' : e.priority === 'Moderate' ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200'}">{e.priority}</span></td>
-                    <td><span className="badge border {e.status === 'Review Required' ? 'bg-amber-50 text-amber-700 border-amber-200' : e.status === 'Compliant' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-slate-100 text-slate-600 border-slate-200'}">{e.status}</span></td>
+                    <td><span className={cn('badge border', e.priority === 'Critical' ? 'bg-red-50 text-red-700 border-red-200' : e.priority === 'High' ? 'bg-orange-50 text-orange-700 border-orange-200' : e.priority === 'Moderate' ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200')}>{e.priority}</span></td>
+                    <td><span className={cn('badge border', e.status === 'Review Required' ? 'bg-amber-50 text-amber-700 border-amber-200' : e.status === 'Compliant' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-slate-100 text-slate-600 border-slate-200')}>{e.status}</span></td>
                   </tr>
                 ))}
               </tbody>

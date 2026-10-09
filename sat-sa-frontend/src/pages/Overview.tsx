@@ -1,147 +1,25 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { 
-  ChevronLeft, 
-  Building2, 
-  AlertTriangle, 
-  Shield, 
-  Gap, 
-  Eye, 
-  AlertCircle, 
-  Search, 
-  Zap, 
-  BarChart2, 
-  GitCompare, 
-  ClipboardList, 
-  FolderSearch, 
-  FileText, 
-  Upload, 
-  CheckCircle2, 
-  History,
-  Settings,
-  Shield,
-  FileQuestion,
-  Users,
-  TrendingUp,
-  TrendingDown,
-  Target,
-  Activity,
-  Clock,
-  ChevronLeft,
-  AlertTriangle,
-  Eye,
-  Shield,
-  BarChart2,
-  GitCompare,
-  ClipboardList,
-  FolderSearch,
-  FileText,
-  Upload,
-  CheckCircle2,
-  History,
-  Settings,
-  Shield,
-  FileQuestion,
-  Users,
-  TrendingUp,
-  TrendingDown,
-  Target,
-  Activity,
-  Clock,
-  AlertTriangle as AlertTriangleIcon,
-  Eye as EyeIcon,
-  Shield as ShieldIcon,
-  BarChart2 as BarChartIcon,
-  GitCompare as GitCompareIcon,
-  ClipboardList as ClipboardListIcon,
-  FolderSearch as FolderSearchIcon,
-  FileText as FileTextIcon,
-  Upload as UploadIcon,
-  CheckCircle2 as CheckCircleIcon,
-  History as HistoryIcon,
-  Settings as SettingsIcon,
-  Shield as ShieldIcon2,
-  FileQuestion as FileQuestionIcon,
-  Users as UsersIcon,
-  TrendingUp,
-  TrendingDown,
-  Target,
-  Activity,
-  Clock,
-  AlertTriangle,
-  Eye,
-  Shield,
-  BarChart2,
-  GitCompare,
-  ClipboardList,
-  FolderSearch,
-  FileText,
-  Upload,
-  CheckCircle2,
-  History,
-  Settings,
-  Shield,
-  FileQuestion,
-  Users,
-} from 'lucide-react';
-import { cn } from '../../lib/utils';
-import { fetchOverview, fetchRiskDistribution } from '../../api/client';
-import { OverviewKPIs, RiskDistribution } from '../../api/types';
+import { fetchOverview, fetchRiskDistribution } from '../api/client';
 import StatCard from '../components/StatCard';
 import { StackedBar, Donut } from '../components/charts';
-import { SeverityBadge, StatusBadge } from '../components/ui';
-import { ChevronLeft } from 'lucide-react';
-
-const filterChips = ['All CSEs', 'Criticality', 'Sector', 'Region', 'Risk level', 'Date range'];
-
-const topConcerns = [
-  { title: 'Critical alerts closed without escalation', severity: 'Critical' as const, affectedEntities: 7, confidence: 92, evidenceCount: 214 },
-  { title: 'Unusually rapid case closure', severity: 'High' as const, affectedEntities: 6, confidence: 89, evidenceCount: 187 },
-  { title: 'Missing telemetry from critical systems', severity: 'High' as const, affectedEntities: 5, confidence: 86, evidenceCount: 92 },
-  { title: 'Repetitive investigation patterns', severity: 'Medium' as const, affectedEntities: 4, confidence: 78, evidenceCount: 143 },
-  { title: 'Significant peer deviation', severity: 'Medium' as const, affectedEntities: 6, confidence: 81, evidenceCount: 76 }
-];
-
-const riskBarData = [
-  { level: 'Critical', count: 3, color: '#dc2626' },
-  { level: 'High', count: 5, color: '#f97316' },
-  { level: 'Moderate', count: 8, color: '#f59e0b' },
-  { level: 'Low', count: 11, color: '#3b82f6' },
-  { level: 'Normal', count: 15, color: '#10b981' }
-];
-
-const topConcernsData = [
-  { title: 'Critical alerts closed without escalation', severity: 'Critical' as const, affectedEntities: 7, confidence: 92, evidenceCount: 214 },
-  { title: 'Unusually rapid case closure', severity: 'High' as const, affectedEntities: 6, confidence: 89, evidenceCount: 187 },
-  { title: 'Missing telemetry from critical systems', severity: 'High' as const, affectedEntities: 5, confidence: 86, evidenceCount: 92 },
-  { title: 'Repetitive investigation patterns', severity: 'Medium' as const, affectedEntities: 4, confidence: 78, evidenceCount: 143 },
-  { title: 'Significant peer deviation', severity: 'Medium' as const, affectedEntities: 6, confidence: 81, evidenceCount: 76 }
-];
+import { SeverityBadge } from '../components/ui';
 
 const filterChips = ['All CSEs', 'Criticality', 'Sector', 'Region', 'Risk level', 'Date range'];
 
 export default function Overview() {
   const [kpis, setKpis] = useState<any[]>([]);
   const [distribution, setDistribution] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-
   useEffect(() => {
     Promise.all([fetchOverview(), fetchRiskDistribution()])
       .then(([overview, dist]) => {
         setKpis(overview.kpis || []);
         setDistribution(dist || []);
-        setLoading(false);
       })
-      .catch(() => setLoading(false));
+      .catch(() => {
+        setKpis([]);
+        setDistribution([]);
+      });
   }, []);
-
-  const riskBarData = [
-    { level: 'Critical', count: 3, color: '#dc2626' },
-    { level: 'High', count: 5, color: '#f97316' },
-    { level: 'Moderate', count: 8, color: '#f59e0b' },
-    { level: 'Low', count: 11, color: '#3b82f6' },
-    { level: 'Normal', count: 15, color: '#10b981' }
-  ];
 
   return (
     <div className="p-6 max-w-[1600px] mx-auto">
@@ -181,13 +59,7 @@ export default function Overview() {
           <div className="grid grid-cols-2 gap-6">
             <div>
               <div className="label mb-2">Risk Distribution</div>
-              <StackedBar data={[
-                { level: 'Critical', count: 3, color: '#dc2626' },
-                { level: 'High', count: 5, color: '#f97316' },
-                { level: 'Moderate', count: 8, color: '#f59e0b' },
-                { level: 'Low', count: 11, color: '#3b82f6' },
-                { level: 'Normal', count: 15, color: '#10b981' }
-              ]} />
+              <StackedBar data={distribution} />
               <div className="mt-5">
                 <div className="label mb-2">Top Supervisory Concerns</div>
                 <div className="flex flex-col gap-2">
@@ -211,13 +83,11 @@ export default function Overview() {
             </div>
             <div>
               <div className="label mb-2">Concentration of Concern</div>
-              <Donut data={[
-                { label: 'Critical (3)', value: 3, color: '#dc2626' },
-                { label: 'High (5)', value: 5, color: '#f97316' },
-                { label: 'Moderate (8)', value: 8, color: '#f59e0b' },
-                { label: 'Low (11)', value: 11, color: '#3b82f6' },
-                { label: 'Normal (15)', value: 15, color: '#10b981' }
-              ]} centerValue="42" centerLabel="CSEs" />
+              <Donut data={distribution.map(item => ({
+                label: `${item.level} (${item.count})`,
+                value: item.count,
+                color: item.color,
+              }))} centerValue={String(distribution.reduce((sum, item) => sum + item.count, 0))} centerLabel="CSEs" />
             </div>
           </div>
         </div>

@@ -18,7 +18,7 @@ export const fetchEntities = (params?: Record<string, string>) =>
   request<any[]>('/entities' + (params ? '?' + new URLSearchParams(params) : ''))
 
 export const fetchEntity = (id: string) =>
-  request<any>(`/entities/${id}`)
+  request<any>(`/entities/${encodeURIComponent(id)}`)
 
 export const createEntity = (data: any) =>
   request<any>('/entities', { method: 'POST', body: JSON.stringify(data) })
@@ -77,7 +77,13 @@ export const fetchCaseEvidence = (caseId: string) =>
 
 // ---- Evidence ----
 export const fetchEvidenceTimeline = (caseId: string) =>
-  request<any>(`/evidence/case/${caseId}`)
+  request<any>(`/evidence/case/${encodeURIComponent(caseId)}`)
+
+export const fetchFindingEvidence = (findingId: string) =>
+  request<any>(`/evidence/finding/${encodeURIComponent(findingId)}`)
+
+export const fetchAlertEvidence = (alertId: string) =>
+  request<any>(`/evidence/alert/${encodeURIComponent(alertId)}`)
 
 export const searchEvidence = (q: string) =>
   request<any[]>(`/evidence/search?q=${encodeURIComponent(q)}`)
@@ -115,6 +121,9 @@ export const fetchIngestionQuality = () =>
 
 export const fetchCoverageMatrix = (entityId?: string) =>
   request<{ categories: string[]; columns: string[]; matrix: number[][] }>(`/analytics/coverage-matrix${entityId && entityId !== 'ALL' ? `?entityId=${entityId}` : ''}`)
+
+export const fetchAnomalies = (params?: Record<string, string>) =>
+  request<{ anomalies: any[]; total: number; page: number; pageSize: number; pageCount: number; summary: any }>(`/analytics/anomalies${params ? `?${new URLSearchParams(params)}` : ''}`)
 
 export async function uploadDataFile(file: File, source?: string) {
   const formData = new FormData()

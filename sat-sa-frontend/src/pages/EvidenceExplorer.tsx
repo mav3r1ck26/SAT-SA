@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
-import { fetchEvidenceTimeline } from '../../api/client';
-import { ChevronRight, Clock, ShieldAlert, FileText } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { fetchEvidenceTimeline } from '../api/client';
+import { ChevronRight } from 'lucide-react';
 import FindingExplanation from '../components/FindingExplanation';
 
 const defaultTimeline = [
@@ -62,15 +62,15 @@ export default function EvidenceExplorer() {
                     </div>
                     <div className="text-[11px] text-slate-500">{evt.actor} · {evt.role}</div>
                     <div className="flex flex-wrap gap-1.5 mt-1">
-                      {evt.meta.map((m, j) => (
+                      {evt.meta.map((m: string, j: number) => (
                         <span key={j} className="text-[10.5px] text-slate-500 bg-slate-50 border border-slate-200 px-1.5 py-0.5 rounded">{m}</span>
                       ))}
                     </div>
                   </div>
-                ))}
+                </div>
+              ))}
               </div>
             </div>
-          </div>
 
           <div className="card p-4">
             <div className="label mb-3">Why was this flagged?</div>

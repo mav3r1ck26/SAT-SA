@@ -10,6 +10,8 @@
     "api": "tsx server/index.ts",
     "api:watch": "tsx watch server/index.ts",
     "seed": "tsx server/seed.ts",
+    "seed:evidence": "tsx server/link-sample-evidence.ts",
+    "seed:review-samples": "tsx server/seed-review-samples.ts",
     "dev:full": "concurrently -k \"tsx watch server/index.ts\" \"vite\"",
     "build:server": "tsc -p server/tsconfig.json"
   },

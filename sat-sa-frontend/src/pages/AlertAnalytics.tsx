@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { MultiBar, BarChart, Donut, AreaChart } from '../../components/charts';
-import { fetchAlertAnalytics } from '../../api/client';
+import { MultiBar } from '../components/charts';
+import { fetchAlertAnalytics } from '../api/client';
 import StatCard from '../components/StatCard';
 
 export default function AlertAnalytics() {
@@ -16,12 +16,6 @@ export default function AlertAnalytics() {
   const conversion = data?.kpis?.alertToCase ?? '11.2%';
   const criticalClosures = data?.kpis?.criticalClosures ?? 214;
   const volumeByMonth = data?.volumeByMonth ?? [];
-  const severityDistribution = data?.severityDistribution ?? [];
-  const disposition = data?.disposition ?? [];
-  const lifecycle = data?.lifecycle ?? [];
-  const conversionData = data?.conversion ?? [];
-  const repeatAlerts = data?.repeatAlerts ?? [];
-  const criticalClosure = data?.criticalClosure ?? [];
 
   return (
     <div className="p-6 max-w-[1600px] mx-auto">
@@ -42,7 +36,7 @@ export default function AlertAnalytics() {
         <div className="card col-span-2 p-4">
           <div className="label mb-3">Alert Volume Over Time</div>
           <MultiBar
-            data={volumeByMonth.map(d => ({ label: d.month || d.label, critical: d.critical, high: d.high, medium: d.medium, low: d.low }))}
+            data={volumeByMonth.map((d: any) => ({ label: d.month || d.label, critical: d.critical, high: d.high, medium: d.medium, low: d.low }))}
             series={[
               { key: 'critical', label: 'Critical', color: '#dc2626' },
               { key: 'high', label: 'High', color: '#f97316' },

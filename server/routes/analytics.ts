@@ -67,7 +67,27 @@ router.get('/coverage-matrix', async (req, res) => {
 
 // Anomalies
 router.get('/anomalies', async (req, res) => {
-  try { res.json({ success: true, data: await detectAnomalies(req.query.entityId?.toString()) }) }
+  try {
+    const all = await detectAnomalies(req.query.entityId?.toString())
+    const severity = req.query.severity?.toString()
+    const type = req.query.type?.toString()
+    const search = req.query.search?.toString().trim().toLowerCase()
+    const filtered = all.filter(item =>
+      (!severity || item.severity === severity) &&
+      (!type || item.type === type) &&
+      (!search || `${item.entityId} ${item.caseId || ''} ${item.type} ${item.description}`.toLowerCase().includes(search))
+    )
+    const pageSize = Math.min(100, Math.max(1, Number(req.query.pageSize) || 50))
+    const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize))
+    const page = Math.min(pageCount, Math.max(1, Number(req.query.page) || 1))
+    const summary = {
+      total: all.length,
+      volumeSpikes: all.filter(item => item.type === 'VOLUME_SPIKE').length,
+      durationAnomalies: all.filter(item => item.type === 'DURATION_ANOMALY').length,
+      lowEvidence: all.filter(item => item.type === 'LOW_EVIDENCE').length,
+    }
+    res.json({ success: true, data: { anomalies: filtered.slice((page - 1) * pageSize, page * pageSize), total: filtered.length, page, pageSize, pageCount, summary } })
+  }
   catch (err) { handleError(err, res) }
 })
 

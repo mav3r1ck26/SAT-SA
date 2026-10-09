@@ -14,10 +14,10 @@ const severityStyles: Record<string, { bg: string; text: string; border: string;
 }
 
 const statusStyles: Record<string, { bg: string; text: string; border: string; dot: string }> = {
-  'New': { bg: 'bg-stone-100', text: 'text-slate-600', border: 'border-stone-200', dot: 'bg-slate-500' },
+  'New': { bg: 'bg-slate-100', text: 'text-slate-600', border: 'border-slate-200', dot: 'bg-slate-500' },
   'In Review': { bg: 'bg-indigo-50', text: 'text-indigo-600', border: 'border-indigo-200', dot: 'bg-indigo-500' },
   'Confirmed': { bg: 'bg-emerald-50', text: 'text-emerald-600', border: 'border-emerald-200', dot: 'bg-emerald-500' },
-  'Dismissed': { bg: 'bg-stone-50', text: 'text-slate-500', border: 'border-stone-200', dot: 'bg-slate-400' },
+  'Dismissed': { bg: 'bg-slate-50', text: 'text-slate-500', border: 'border-slate-200', dot: 'bg-slate-400' },
   'Monitor': { bg: 'bg-amber-50', text: 'text-amber-600', border: 'border-amber-200', dot: 'bg-amber-500' },
   'Review Required': { bg: 'bg-rose-50', text: 'text-rose-600', border: 'border-rose-200', dot: 'bg-rose-500' },
   'Compliant': { bg: 'bg-emerald-50', text: 'text-emerald-600', border: 'border-emerald-200', dot: 'bg-emerald-500' },
@@ -28,7 +28,7 @@ const statusStyles: Record<string, { bg: string; text: string; border: string; d
   'High': { bg: 'bg-orange-50', text: 'text-orange-600', border: 'border-orange-200', dot: 'bg-orange-500' },
   'Low': { bg: 'bg-indigo-50', text: 'text-indigo-600', border: 'border-indigo-200', dot: 'bg-indigo-500' },
   'Available': { bg: 'bg-emerald-50', text: 'text-emerald-600', border: 'border-emerald-200', dot: 'bg-emerald-500' },
-  'Ready': { bg: 'bg-stone-100', text: 'text-slate-600', border: 'border-stone-200', dot: 'bg-slate-500' },
+  'Ready': { bg: 'bg-slate-100', text: 'text-slate-600', border: 'border-slate-200', dot: 'bg-slate-500' },
   'Assigned': { bg: 'bg-blue-50', text: 'text-blue-600', border: 'border-blue-200', dot: 'bg-blue-500' },
   'Submitted': { bg: 'bg-indigo-50', text: 'text-indigo-600', border: 'border-indigo-200', dot: 'bg-indigo-500' }
 }
@@ -70,7 +70,7 @@ export function Confidence({ value, compact }: { value: number; compact?: boolea
   const barBg = value >= 90 ? 'bg-emerald-500' : value >= 80 ? 'bg-indigo-500' : value >= 70 ? 'bg-amber-500' : 'bg-slate-400'
   return (
     <span className={`inline-flex items-center gap-2 ${compact ? '' : 'min-w-[105px]'}`}>
-      <div className="h-1.5 w-12 rounded-full bg-stone-200 overflow-hidden border border-stone-200">
+      <div className="h-1.5 w-12 rounded-full bg-slate-200 overflow-hidden border border-slate-200">
         <div className={`h-full rounded-full ${barBg}`} style={{ width: `${value}%` }} />
       </div>
       <span className={`font-mono text-[11px] font-semibold ${color}`}>{value}%</span>
@@ -82,7 +82,7 @@ export function RiskScoreBar({ score, showLabel }: { score: number; showLabel?: 
   const color = score >= 85 ? 'bg-rose-500' : score >= 70 ? 'bg-orange-500' : score >= 55 ? 'bg-amber-500' : score >= 40 ? 'bg-indigo-500' : 'bg-emerald-500'
   return (
     <div className="flex items-center gap-2">
-      <div className="risk-bar-track w-24 bg-stone-200 border border-stone-200">
+      <div className="risk-bar-track w-24 bg-slate-200 border border-slate-200">
         <div className={`risk-bar-fill ${color}`} style={{ width: `${Math.min(100, Math.max(0, score))}%` }} />
       </div>
       {showLabel && <span className="font-mono text-[11.5px] font-semibold text-slate-800">{score}</span>}
@@ -103,7 +103,7 @@ export function RiskScoreGauge({ score }: { score: number }) {
     <div className="flex items-center gap-5 p-2">
       <div className="relative w-32 h-32 shrink-0">
         <svg className="w-32 h-32 -rotate-90" viewBox="0 0 128 128">
-          <circle cx="64" cy="64" r={r} fill="none" stroke="#e7e5e4" strokeWidth="10" />
+          <circle cx="64" cy="64" r={r} fill="none" stroke="#e2e8f0" strokeWidth="10" />
           <circle
             cx="64" cy="64" r={r} fill="none"
             stroke={ringColor} strokeWidth="10" strokeLinecap="round"

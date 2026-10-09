@@ -88,7 +88,7 @@ export default function EntitiesList() {
   return (
     <div className="p-6 max-w-[1700px] mx-auto space-y-5">
       {/* Header Banner */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-stone-200 pb-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200 pb-4">
         <div>
           <div className="flex items-center gap-3">
             <h1 className="page-title text-xl font-bold tracking-tight text-slate-900">Critical Sector Entities Fleet</h1>
@@ -110,12 +110,12 @@ export default function EntitiesList() {
       </div>
 
       {/* Filter and Search Bar */}
-      <div className="flex flex-wrap items-center justify-between gap-3 bg-stone-50 p-3 rounded-lg border border-stone-200">
+      <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-50 p-3 rounded-lg border border-slate-200">
         <div className="flex flex-wrap items-center gap-3 flex-1">
           <div className="relative min-w-[280px]">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
             <input 
-              className="input pl-9 w-full bg-white text-slate-800 placeholder-slate-500 border-stone-200 focus:border-indigo-200 text-xs" 
+              className="input pl-9 w-full bg-white text-slate-800 placeholder-slate-500 border-slate-200 focus:border-indigo-200 text-xs" 
               placeholder="Search by CSE ID, organization name, or sector..." 
               value={search} 
               onChange={e => setSearch(e.target.value)} 
@@ -125,7 +125,7 @@ export default function EntitiesList() {
           <div className="flex items-center gap-1.5">
             <Filter className="w-3.5 h-3.5 text-slate-400 mr-0.5" />
             <select 
-              className="select bg-white border-stone-200 text-slate-700 text-xs py-1.5" 
+              className="select bg-white border-slate-200 text-slate-700 text-xs py-1.5" 
               value={sectorFilter} 
               onChange={e => setSectorFilter(e.target.value)}
             >
@@ -138,7 +138,7 @@ export default function EntitiesList() {
 
           <div>
             <select 
-              className="select bg-white border-stone-200 text-slate-700 text-xs py-1.5" 
+              className="select bg-white border-slate-200 text-slate-700 text-xs py-1.5" 
               value={criticalityFilter} 
               onChange={e => setCriticalityFilter(e.target.value)}
             >
@@ -192,7 +192,7 @@ export default function EntitiesList() {
                 return (
                   <tr 
                     key={e.id} 
-                    className="cursor-pointer hover:bg-stone-100 transition-colors" 
+                    className="cursor-pointer hover:bg-slate-100 transition-colors" 
                     onClick={() => openEntity(e.id)}
                   >
                     <td className="font-mono text-indigo-600 font-bold">
@@ -203,7 +203,7 @@ export default function EntitiesList() {
                     </td>
                     <td className="text-xs font-medium text-slate-700">{e.name}</td>
                     <td>
-                      <span className="px-2 py-0.5 rounded text-[11px] font-mono bg-stone-50 border border-stone-200 text-slate-600">
+                      <span className="px-2 py-0.5 rounded text-[11px] font-mono bg-slate-50 border border-slate-200 text-slate-600">
                         {e.sector}
                       </span>
                     </td>
@@ -213,7 +213,7 @@ export default function EntitiesList() {
                     </td>
                     <td>
                       <div className="flex items-center gap-2">
-                        <div className="w-16 h-1.5 rounded-full bg-stone-200 overflow-hidden">
+                        <div className="w-16 h-1.5 rounded-full bg-slate-200 overflow-hidden">
                           <div 
                             className={`h-full rounded-full ${completeness > 80 ? 'bg-emerald-400' : completeness > 60 ? 'bg-amber-400' : 'bg-rose-400'}`}
                             style={{ width: `${completeness}%` }}

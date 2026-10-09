@@ -428,33 +428,45 @@ type CaseBehaviour = 'Normal' | 'Unusually Fast' | 'Superficial' | 'Repetitive' 
 // ============================================================
 export async function escalationAnalytics() {
   const critTotal = await Alert.countDocuments({ severity: 'Critical' as const })
-  const critEsc = await Alert.countDocuments({ severity: 'Critical' as const, escalationPath: { $ne: null } })
+  const critEsc = await Alert.countDocuments({ severity: 'Critical' as const, escalationPath: { $exists: true, $nin: [null, ''] } })
 
   const severities: AlertSeverity[] = ['Critical', 'High', 'Medium', 'Low', 'Informational']
   const severityMatrix = []
   for (const sev of severities) {
     const total = await Alert.countDocuments({ severity: sev })
-    const esc = await Alert.countDocuments({ severity: sev, escalationPath: { $ne: null } })
+    const esc = await Alert.countDocuments({ severity: sev, escalationPath: { $exists: true, $nin: [null, ''] } })
     severityMatrix.push({ severity: sev, escalated: esc, notEscalated: total - esc })
   }
 
   const pathsAgg = await Alert.aggregate([
-    { $match: { escalationPath: { $ne: null } } },
+    { $match: { escalationPath: { $exists: true, $nin: [null, ''] } } },
     { $group: { _id: '$escalationPath', count: { $sum: 1 } } },
     { $sort: { count: -1 } }
   ])
 
   const delayDist = await Alert.aggregate([
-    { $match: { escalationDelayMin: { $ne: null } } },
+    { $match: { escalationDelayMin: { $gte: 0 } } },
     { $bucket: { groupBy: '$escalationDelayMin', boundaries: [0, 60, 240, 1440, 10080, Infinity], default: 'Other', output: { count: { $sum: 1 } } } }
   ])
+
+  const delayRanges = [
+    { label: '< 1 hour', severity: 'On time', color: '#10b981' },
+    { label: '1–4 hours', severity: 'Low delay', color: '#06b6d4' },
+    { label: '4–24 hours', severity: 'Elevated delay', color: '#f59e0b' },
+    { label: '1–7 days', severity: 'Late', color: '#f97316' },
+    { label: '> 7 days', severity: 'Severe delay', color: '#ef4444' },
+  ]
+  const escalatedWithin24h = await Alert.countDocuments({ escalationPath: { $exists: true, $nin: [null, ''] }, escalationDelayMin: { $lte: 1440 } })
+  const escalationOver24h = await Alert.countDocuments({ escalationPath: { $exists: true, $nin: [null, ''] }, escalationDelayMin: { $gt: 1440 } })
 
   return {
     escalatedCritical: critEsc,
     notEscalatedCritical: critTotal - critEsc,
     severityMatrix,
-    paths: pathsAgg.map(p => ({ path: p._id, count: p.count })),
-    delayDistribution: delayDist.map(d => ({ hours: d._id, count: d.count })),
+    escalatedWithin24h,
+    escalationOver24h,
+    paths: pathsAgg.filter(p => p._id).map(p => ({ path: p._id, count: p.count })),
+    delayDistribution: delayDist.filter(d => Number.isFinite(d._id)).map(d => ({ ...delayRanges[[0, 60, 240, 1440, 10080].indexOf(Number(d._id))], count: d.count })),
     anomalies: severityMatrix
       .filter(s => s.severity === 'Critical' || s.severity === 'High')
       .filter(s => (s.notEscalated / (s.escalated + s.notEscalated || 1)) > 0.2)
@@ -473,13 +485,44 @@ export async function alertAnalytics() {
     distribution.push({ severity: sev, count: await Alert.countDocuments({ severity: sev }) })
   }
 
-  const conversionAgg = await Alert.aggregate([
-    { $group: { _id: '$category', alerts: { $sum: 1 }, cases: { $sum: { $cond: [{ $gt: ['$alertToCase', 0] }, 1, 0] } } } }
+  const [alertCategories, linkedCases] = await Promise.all([
+    Alert.find().select({ id: 1, category: 1 }).lean(),
+    Case.find({ alertId: { $ne: null } }).select({ alertId: 1 }).lean(),
   ])
+  const linkedAlertIds = new Set(linkedCases.map(item => item.alertId).filter(Boolean))
+  const conversions = new Map<string, { category: string; alerts: number; cases: number }>()
+  for (const alert of alertCategories) {
+    const row = conversions.get(alert.category) || { category: alert.category, alerts: 0, cases: 0 }
+    row.alerts++
+    if (linkedAlertIds.has(alert.id)) row.cases++
+    conversions.set(alert.category, row)
+  }
+  const conversionAgg = [...conversions.values()].sort((a, b) => b.alerts - a.alerts)
 
   const ackAvg = await Alert.aggregate([{ $match: { acknowledgementTimeMin: { $ne: null } } }, { $group: { _id: null, v: { $avg: '$acknowledgementTimeMin' } } }])
   const invAvg = await Alert.aggregate([{ $match: { investigationTimeMin: { $ne: null } } }, { $group: { _id: null, v: { $avg: '$investigationTimeMin' } } }])
   const cloAvg = await Alert.aggregate([{ $match: { closureTimeMin: { $ne: null } } }, { $group: { _id: null, v: { $avg: '$closureTimeMin' } } }])
+  const linkedCaseCount = await Case.countDocuments({ alertId: { $ne: null } })
+  const criticalClosureCount = await Alert.countDocuments({ severity: 'Critical', status: 'closed' })
+
+  const monthlySeverity = await Alert.aggregate([
+    { $match: { createdAt: { $ne: null } } },
+    { $group: { _id: { year: { $year: '$createdAt' }, month: { $month: '$createdAt' }, severity: '$severity' }, count: { $sum: 1 } } },
+    { $sort: { '_id.year': 1, '_id.month': 1 } }
+  ])
+  const volumeByMonthMap = new Map<string, any>()
+  for (const row of monthlySeverity) {
+    const monthLabel = `${row._id.year}-${String(row._id.month).padStart(2, '0')}`
+    const bucket = volumeByMonthMap.get(monthLabel) || { month: monthLabel, critical: 0, high: 0, medium: 0, low: 0, total: 0 }
+    const key = String(row._id.severity || '').toLowerCase()
+    if (key in bucket) bucket[key] = row.count
+    bucket.total += row.count
+    volumeByMonthMap.set(monthLabel, bucket)
+  }
+  const dispositionAgg = await Alert.aggregate([
+    { $group: { _id: { $ifNull: ['$disposition', '$closureNote'] }, count: { $sum: 1 } } },
+    { $sort: { count: -1 } }, { $limit: 8 }
+  ])
 
   const lifecycle = []
   if (ackAvg.length) lifecycle.push({ stage: 'Acknowledgment', meanMin: +ackAvg[0].v.toFixed(1) })
@@ -502,8 +545,17 @@ export async function alertAnalytics() {
 
   return {
     total,
+    kpis: {
+      totalAlerts: total,
+      meanAckTime: ackAvg[0] ? `${ackAvg[0].v.toFixed(1)} min` : '—',
+      meanClosure: cloAvg[0] ? `${cloAvg[0].v.toFixed(1)} min` : '—',
+      alertToCase: total ? `${((linkedCaseCount / total) * 100).toFixed(1)}%` : '0%',
+      criticalClosures: criticalClosureCount,
+    },
+    volumeByMonth: [...volumeByMonthMap.values()],
     severityDistribution: distribution,
-    conversion: conversionAgg.map(c => ({ category: c._id, alerts: c.alerts, cases: c.cases, rate: c.alerts ? +((c.cases / c.alerts) * 100).toFixed(1) : 0 })),
+    conversion: conversionAgg.map(c => ({ category: c.category, alerts: c.alerts, cases: c.cases, rate: c.alerts ? +((c.cases / c.alerts) * 100).toFixed(1) : 0 })),
+    disposition: dispositionAgg.filter(x => x._id).map(x => ({ disposition: x._id, count: x.count })),
     lifecycle,
     repeatAlerts: repeatAlerts.map(a => ({ asset: a._id, count: a.count })),
     criticalClosure: criticalClosure.map(c => ({ pattern: c._id, count: c.count }))
@@ -544,7 +596,8 @@ export async function investigationAnalytics() {
   ])
 
   const evidenceFreq = await Case.aggregate([
-    { $group: { _id: '$evidenceCount', avgPerCase: { $avg: '$evidenceCount' } } }
+    { $group: { _id: '$evidenceCount', avgPerCase: { $avg: '$evidenceCount' }, cases: { $sum: 1 } } },
+    { $sort: { _id: 1 } }
   ])
 
   const workload = await Case.aggregate([
@@ -553,11 +606,33 @@ export async function investigationAnalytics() {
     { $sort: { cases: -1 } }
   ])
 
+  const [durationAverage, reopenedCases, casesRequiringReview] = await Promise.all([
+    Case.aggregate([{ $group: { _id: null, value: { $avg: '$durationMin' } } }]),
+    Case.countDocuments({ reopenedCount: { $gt: 0 } }),
+    Case.countDocuments({ behaviour: 'Requires Review' }),
+  ])
+
   const d = duration[0] || { d1: 0, d2: 0, d3: 0, d4: 0, d5: 0, d6: 0 }
+  const meanDuration = durationAverage[0]?.value || 0
+  const patterns = behaviour
+    .filter(row => row.classification !== 'Normal' && row.count > 0)
+    .map(row => ({
+      pattern: row.classification === 'Repetitive' ? 'Repeated investigation templates' : row.classification,
+      severity: row.classification === 'Requires Review' ? 'Critical' : row.classification === 'Repetitive' || row.classification === 'Superficial' ? 'High' : 'Medium',
+      count: row.count,
+    }))
 
   return {
     total,
+    kpis: {
+      totalCases: total,
+      meanDuration: `${meanDuration.toFixed(1)} min`,
+      investigationToClosure: total ? `${((await Case.countDocuments({ status: 'closed' }) / total) * 100).toFixed(1)}%` : '0%',
+      caseReopening: total ? `${((reopenedCases / total) * 100).toFixed(1)}%` : '0%',
+      requiresReview: casesRequiringReview,
+    },
     behaviour,
+    patterns,
     durationDistribution: [
       { range: '< 10 min', count: d.d1 },
       { range: '10–30 min', count: d.d2 },
@@ -568,7 +643,7 @@ export async function investigationAnalytics() {
     ],
     reopening: reopening.map(r => ({ entity: r._id, reopened: r.reopened, total: r.total, rate: r.total ? +((r.reopened / r.total) * 100).toFixed(1) : 0 })),
     depth: depth.map(d => ({ depth: d._id, count: d.count })),
-    evidenceFrequency: evidenceFreq.map(e => ({ category: e._id, avgPerCase: +e.avgPerCase.toFixed(1) })),
+    evidenceFrequency: evidenceFreq.map(e => ({ category: `${e._id ?? 0} evidence artifacts`, avgPerCase: +e.avgPerCase.toFixed(1), cases: e.cases })),
     workload: workload.map(w => ({ investigator: w._id, cases: w.cases, avgDuration: +w.avgDuration.toFixed(1) }))
   }
 }
@@ -649,6 +724,8 @@ export async function generateReviewQueue() {
         id,
         findingId: id,
         ref: id,
+        reason: g.description || g.title,
+        reasons: [g.description || g.title],
         status: match?.status || 'New',
         reviewedBy: match?.reviewedBy || null,
         examinerNote: match?.examinerNote || null,
@@ -663,6 +740,8 @@ export async function generateReviewQueue() {
         id,
         findingId: id,
         ref: id,
+        reason: b.description || b.title || b.category,
+        reasons: [b.description || b.title || b.category],
         status: match?.status || 'New',
         reviewedBy: match?.reviewedBy || null,
         examinerNote: match?.examinerNote || null,
@@ -671,6 +750,25 @@ export async function generateReviewQueue() {
       }
     })
   ]
+
+  // Include distinct persisted finding classes (anomalies, peer deviations,
+  // data quality, and sample scenarios) alongside freshly detected gaps.
+  const queueFindings = await Finding.find({ status: { $in: ['New', 'In Review'] } }).lean()
+  const includedFindingIds = new Set(allFindings.map(f => f.ref))
+  for (const finding of queueFindings) {
+    if (includedFindingIds.has(finding.id)) continue
+    allFindings.push({
+      ...finding,
+      ref: finding.id,
+      findingId: finding.id,
+      reason: finding.description || finding.title,
+      reasons: [finding.description || finding.title],
+      source: 'persisted_finding',
+      mitre: (finding as any).mitreTechnique,
+      alertCategory: (finding.supportingMetrics as any)?.alertCategory
+    })
+    includedFindingIds.add(finding.id)
+  }
 
   const weights = config.reviewPriorityWeights
 
@@ -704,6 +802,18 @@ export async function generateReviewQueue() {
       }
     })
     .sort((a, b) => b.riskScore - a.riskScore)
+    .filter((() => {
+      const typeCounts = new Map<string, number>()
+      const seenTitles = new Set<string>()
+      return (finding: any) => {
+        const title = String(finding.title || finding.reason || finding.findingType).toLowerCase()
+        const type = String(finding.findingType || 'OTHER')
+        if (seenTitles.has(title) || (typeCounts.get(type) || 0) >= 2) return false
+        seenTitles.add(title)
+        typeCounts.set(type, (typeCounts.get(type) || 0) + 1)
+        return true
+      }
+    })())
     .map((f, i) => ({ ...f, priority: i + 1 }))
 
   return prioritized

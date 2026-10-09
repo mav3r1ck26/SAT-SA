@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { fetchAuditLog, exportAuditLog } from '../../api/client';
-import { History, Download } from 'lucide-react';
+import { fetchAuditLog, exportAuditLog } from '../api/client';
+import { History } from 'lucide-react';
 
 export default function AuditTrail() {
   const [search, setSearch] = useState('');

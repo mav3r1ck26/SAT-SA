@@ -22,6 +22,9 @@ export default function EntityProfile() {
   const { selectedEntity, setSelectedEntity, setCurrentPage } = useApp()
   const [activeTab, setActiveTab] = useState('Overview')
   const [entity, setEntity] = useState<any>(null)
+  const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState('')
+  const [reloadKey, setReloadKey] = useState(0)
   const [fleet, setFleet] = useState<any[]>([])
   const [findings, setFindings] = useState<any[]>([])
   const [timeline, setTimeline] = useState<any[]>([])
@@ -33,7 +36,14 @@ export default function EntityProfile() {
   }, [])
 
   useEffect(() => {
-    fetchEntity(entityId).then(setEntity).catch(() => {})
+    let active = true
+    setEntity(null)
+    setLoading(true)
+    setLoadError('')
+    fetchEntity(entityId)
+      .then(result => { if (active) setEntity(result) })
+      .catch(error => { if (active) setLoadError(error instanceof Error ? error.message : 'Entity request failed') })
+      .finally(() => { if (active) setLoading(false) })
     fetchFindings({ entityId }).then(setFindings).catch(() => setFindings([]))
     fetchBenchmark(entityId)
       .then(d => setBenchmarkData(Array.isArray(d) ? d : []))
@@ -41,12 +51,23 @@ export default function EntityProfile() {
     fetchEvidenceTimeline(entityId)
       .then(r => setTimeline(r.timeline && r.timeline.length ? r.timeline : fallbackTimeline))
       .catch(() => setTimeline(fallbackTimeline))
-  }, [entityId])
+    return () => { active = false }
+  }, [entityId, reloadKey])
 
-  if (!entity) return (
+  if (!entity && loading) return (
     <div className="p-8 max-w-[1700px] mx-auto text-center space-y-3">
-      <div className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-stone-50 border border-stone-300 text-indigo-600 font-mono text-xs">
+      <div className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-50 border border-slate-300 text-indigo-600 font-mono text-xs">
         <Activity className="w-4 h-4 animate-spin" /> Ingesting Entity Telemetry for {entityId}...
+      </div>
+    </div>
+  )
+  if (!entity) return (
+    <div className="p-8 max-w-[1700px] mx-auto text-center space-y-4">
+      <div className="text-sm font-semibold text-slate-800">Could not load entity {entityId}</div>
+      <p className="text-xs font-mono text-rose-600">{loadError || 'The API did not return this entity.'}</p>
+      <div className="flex justify-center gap-2">
+        <button className="btn btn-sm" onClick={() => setReloadKey(key => key + 1)}>Retry</button>
+        <button className="btn btn-sm" onClick={() => setCurrentPage('entities')}>Return to Entity Fleet</button>
       </div>
     </div>
   )
@@ -93,7 +114,7 @@ export default function EntityProfile() {
           <select
             value={entityId}
             onChange={e => setSelectedEntity(e.target.value)}
-            className="select bg-stone-50 border-stone-300 text-indigo-600 text-xs py-1 font-mono"
+            className="select bg-slate-50 border-slate-300 text-indigo-600 text-xs py-1 font-mono"
           >
             {fleet.map(item => (
               <option key={item.id} value={item.id}>{item.id} — {item.name}</option>
@@ -109,11 +130,11 @@ export default function EntityProfile() {
       </div>
 
       {/* Header Dossier Banner */}
-      <div className="card p-5 bg-stone-50 border-stone-200">
+      <div className="card p-5 bg-slate-50 border-slate-200">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div className="space-y-2">
             <div className="flex flex-wrap items-center gap-3">
-              <span className="font-mono text-base font-bold text-indigo-600 px-2 py-0.5 rounded bg-white border border-stone-300">
+              <span className="font-mono text-base font-bold text-indigo-600 px-2 py-0.5 rounded bg-white border border-slate-300">
                 {entity.id}
               </span>
               <h1 className="text-lg font-bold text-slate-900 tracking-tight">
@@ -131,13 +152,13 @@ export default function EntityProfile() {
             </div>
           </div>
 
-          <div className="flex items-center gap-4 bg-white p-3 rounded-lg border border-stone-200">
+          <div className="flex items-center gap-4 bg-white p-3 rounded-lg border border-slate-200">
             <div className="text-right">
               <div className="label text-[10px] text-slate-400 mb-0.5">Telemetry Completeness</div>
               <div className="font-mono text-sm font-bold text-indigo-600">{completeness}%</div>
               <div className="text-[10px] text-slate-400 font-mono">Air-Gap Verified</div>
             </div>
-            <div className="w-10 h-10 rounded-full border border-stone-300 flex items-center justify-center bg-stone-50 text-indigo-600 font-mono text-xs font-bold">
+            <div className="w-10 h-10 rounded-full border border-slate-300 flex items-center justify-center bg-slate-50 text-indigo-600 font-mono text-xs font-bold">
               {completeness}%
             </div>
           </div>
@@ -145,7 +166,7 @@ export default function EntityProfile() {
       </div>
 
       {/* Navigation Tabs */}
-      <div className="flex gap-1.5 border-b border-stone-200 overflow-x-auto pb-1">
+      <div className="flex gap-1.5 border-b border-slate-200 overflow-x-auto pb-1">
         {tabs.map(t => (
           <button 
             key={t} 
@@ -171,7 +192,7 @@ export default function EntityProfile() {
                 <RiskScoreGauge score={riskScore} />
               </div>
 
-              <div className="mt-4 pt-4 border-t border-stone-200">
+              <div className="mt-4 pt-4 border-t border-slate-200">
                 <div className="label text-[10px] text-slate-400 uppercase font-mono mb-2">Capability Sub-Scores</div>
                 <ScoreBars data={[
                   { label: 'Threat Detection', value: detectionScore },
@@ -186,11 +207,11 @@ export default function EntityProfile() {
 
             <div className="card p-4 space-y-2 text-xs font-mono">
               <div className="label text-[10px] text-slate-400 uppercase">Audit Metadata</div>
-              <div className="flex justify-between py-1 border-b border-stone-200">
+              <div className="flex justify-between py-1 border-b border-slate-200">
                 <span className="text-slate-400">Execution Gaps Flagged</span>
                 <span className="text-rose-600 font-bold">{findings.length} findings</span>
               </div>
-              <div className="flex justify-between py-1 border-b border-stone-200">
+              <div className="flex justify-between py-1 border-b border-slate-200">
                 <span className="text-slate-400">Blind Spots Identified</span>
                 <span className="text-amber-600 font-bold">{entity.negativeSpace ?? 2} areas</span>
               </div>
@@ -221,7 +242,7 @@ export default function EntityProfile() {
 
             {/* Key Findings for Entity */}
             <div className="card">
-              <div className="card-header border-b border-stone-200 pb-3 flex items-center justify-between">
+              <div className="card-header border-b border-slate-200 pb-3 flex items-center justify-between">
                 <div>
                   <div className="card-title text-sm font-semibold flex items-center gap-2 text-slate-800">
                     <AlertOctagon className="w-4 h-4 text-rose-600" />
@@ -238,7 +259,7 @@ export default function EntityProfile() {
               
               <div className="divide-y divide-slate-800">
                 {findings.map((f: any, i: number) => (
-                  <div key={i} className="p-4 hover:bg-stone-100 transition-colors space-y-2">
+                  <div key={i} className="p-4 hover:bg-slate-100 transition-colors space-y-2">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <div className="flex items-center gap-2 min-w-0">
                         <SeverityBadge severity={f.severity} />
@@ -248,7 +269,7 @@ export default function EntityProfile() {
                       </div>
                       <div className="flex items-center gap-3">
                         <Confidence value={f.confidence || 85} compact />
-                        <span className="text-xs font-mono text-slate-400 bg-stone-50 px-2 py-0.5 rounded border border-stone-200">
+                        <span className="text-xs font-mono text-slate-400 bg-slate-50 px-2 py-0.5 rounded border border-slate-200">
                           {f.evidenceCount || 4} evidence items
                         </span>
                       </div>
@@ -270,7 +291,7 @@ export default function EntityProfile() {
       {/* Tab 2: Peer Benchmarking */}
       {activeTab === 'Peer Benchmarking' && (
         <div className="card p-5 space-y-5">
-          <div className="card-header border-b border-stone-200 pb-3 flex flex-wrap items-center justify-between gap-3">
+          <div className="card-header border-b border-slate-200 pb-3 flex flex-wrap items-center justify-between gap-3">
             <div>
               <div className="card-title text-sm font-semibold flex items-center gap-2 text-slate-800">
                 <BarChart3 className="w-4 h-4 text-indigo-600" />
@@ -305,7 +326,7 @@ export default function EntityProfile() {
               const pct = b.percentile ?? 50
               const barColor = pct >= 85 ? 'bg-rose-500' : pct >= 70 ? 'bg-amber-500' : pct >= 40 ? 'bg-cyan-500' : 'bg-emerald-500'
               return (
-                <div key={i} className="p-4 rounded-lg bg-white border border-stone-200 space-y-2.5">
+                <div key={i} className="p-4 rounded-lg bg-white border border-slate-200 space-y-2.5">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div className="flex items-center gap-2">
                       <span className="text-xs font-bold text-slate-800">{b.metric}</span>
@@ -315,7 +336,7 @@ export default function EntityProfile() {
                       <span>{entity.id}: <strong className="text-indigo-600">{b.entityDisplay || b.entityValue}</strong></span>
                       <span className="text-slate-400">|</span>
                       <span>Sector Median: <strong className="text-slate-600">{b.peerMedianDisplay || b.peerMedian}</strong></span>
-                      <span className="px-2 py-0.5 rounded bg-stone-50 border border-stone-300 text-indigo-600 font-bold">
+                      <span className="px-2 py-0.5 rounded bg-slate-50 border border-slate-300 text-indigo-600 font-bold">
                         {pct}th %ile
                       </span>
                     </div>
@@ -323,7 +344,7 @@ export default function EntityProfile() {
 
                   {/* Visual Percentile Distribution Bar */}
                   <div className="space-y-1">
-                    <div className="h-2.5 w-full bg-stone-50 rounded-full overflow-hidden border border-stone-200 relative">
+                    <div className="h-2.5 w-full bg-slate-50 rounded-full overflow-hidden border border-slate-200 relative">
                       {/* 50th percentile median marker */}
                       <div className="absolute top-0 bottom-0 left-1/2 w-0.5 bg-slate-600 z-10" title="Sector Median (50th percentile)" />
                       <div 
@@ -348,7 +369,7 @@ export default function EntityProfile() {
             )}
           </div>
 
-          <div className="p-3.5 rounded-lg bg-stone-50 border border-stone-200 text-xs text-slate-600 space-y-1">
+          <div className="p-3.5 rounded-lg bg-slate-50 border border-slate-200 text-xs text-slate-600 space-y-1">
             <div className="font-semibold text-slate-800 flex items-center gap-1.5 font-mono text-[11px]">
               <Shield className="w-3.5 h-3.5 text-indigo-600" />
               Supervisory Deviation Guidance
@@ -368,24 +389,24 @@ export default function EntityProfile() {
             Detection Pipeline & Triage Velocity
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 font-mono text-xs">
-            <div className="p-3 bg-white rounded-lg border border-stone-200">
+            <div className="p-3 bg-white rounded-lg border border-slate-200">
               <span className="text-slate-400">Detection Capability Score:</span>
               <div className="text-lg font-bold text-indigo-600 mt-1">{detectionScore}/100</div>
             </div>
-            <div className="p-3 bg-white rounded-lg border border-stone-200">
+            <div className="p-3 bg-white rounded-lg border border-slate-200">
               <span className="text-slate-400">Mean Triage Duration:</span>
               <div className="text-lg font-bold text-slate-700 mt-1">
                 {entity.operationalMetrics?.meanTriageDuration || '4.2 minutes'}
               </div>
             </div>
-            <div className="p-3 bg-white rounded-lg border border-stone-200">
+            <div className="p-3 bg-white rounded-lg border border-slate-200">
               <span className="text-slate-400">Alert-to-Case Ratio:</span>
               <div className="text-lg font-bold text-slate-700 mt-1">
                 {entity.operationalMetrics?.alertToCaseRatio || '14.8% conversion'}
               </div>
             </div>
           </div>
-          <p className="text-xs text-slate-600 bg-stone-50 p-3 rounded border border-stone-200">
+          <p className="text-xs text-slate-600 bg-slate-50 p-3 rounded border border-slate-200">
             Detection telemetry is verified across perimeter firewalls, endpoint detection and response (EDR), and identity providers. Rapid triage instances under 5 minutes are flagged for superficial closure audits.
           </p>
         </div>
@@ -399,24 +420,24 @@ export default function EntityProfile() {
             Forensic Investigation Depth & Rigor
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 font-mono text-xs">
-            <div className="p-3 bg-white rounded-lg border border-stone-200">
+            <div className="p-3 bg-white rounded-lg border border-slate-200">
               <span className="text-slate-400">Investigation Score:</span>
               <div className="text-lg font-bold text-amber-600 mt-1">{investigationScore}/100</div>
             </div>
-            <div className="p-3 bg-white rounded-lg border border-stone-200">
+            <div className="p-3 bg-white rounded-lg border border-slate-200">
               <span className="text-slate-400">Avg Artifacts Attached:</span>
               <div className="text-lg font-bold text-slate-700 mt-1">
                 {entity.operationalMetrics?.avgArtifactsAttached || '3.4 evidence items'}
               </div>
             </div>
-            <div className="p-3 bg-white rounded-lg border border-stone-200">
+            <div className="p-3 bg-white rounded-lg border border-slate-200">
               <span className="text-slate-400">Template Reuse Index:</span>
               <div className="text-lg font-bold text-rose-600 mt-1">
                 {entity.operationalMetrics?.templateReuseIndex || '18.2% repeated'}
               </div>
             </div>
           </div>
-          <p className="text-xs text-slate-600 bg-stone-50 p-3 rounded border border-stone-200">
+          <p className="text-xs text-slate-600 bg-slate-50 p-3 rounded border border-slate-200">
             Examiners evaluate whether investigations record genuine forensic artifacts (memory dumps, network PCAPs, authorization logs) or rely on copy-pasted generic templates to satisfy SLA closure benchmarks.
           </p>
         </div>
@@ -430,24 +451,24 @@ export default function EntityProfile() {
             Statutory Escalation & Incident Routing Compliance
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 font-mono text-xs">
-            <div className="p-3 bg-white rounded-lg border border-stone-200">
+            <div className="p-3 bg-white rounded-lg border border-slate-200">
               <span className="text-slate-400">Escalation Score:</span>
               <div className="text-lg font-bold text-rose-600 mt-1">{escalationScore}/100</div>
             </div>
-            <div className="p-3 bg-white rounded-lg border border-stone-200">
+            <div className="p-3 bg-white rounded-lg border border-slate-200">
               <span className="text-slate-400">Statutory 6h Compliance:</span>
               <div className="text-lg font-bold text-amber-600 mt-1">
                 {entity.operationalMetrics?.statutoryCompliance || '84.1% on-time'}
               </div>
             </div>
-            <div className="p-3 bg-white rounded-lg border border-stone-200">
+            <div className="p-3 bg-white rounded-lg border border-slate-200">
               <span className="text-slate-400">Critical Unescalated:</span>
               <div className="text-lg font-bold text-rose-600 mt-1">
                 {entity.operationalMetrics?.criticalUnescalated || '3 alerts flagged'}
               </div>
             </div>
           </div>
-          <p className="text-xs text-slate-600 bg-stone-50 p-3 rounded border border-stone-200">
+          <p className="text-xs text-slate-600 bg-slate-50 p-3 rounded border border-slate-200">
             Under CERT-In Directions and NCIIPC guidelines, all cyber security incidents impacting critical systems must be notified within 6 hours. Delays exceeding 360 minutes are marked as statutory non-compliance.
           </p>
         </div>
@@ -456,18 +477,18 @@ export default function EntityProfile() {
       {/* Tab 5: Forensic Evidence Timeline */}
       {activeTab === 'Forensic Evidence' && (
         <div className="card p-5 space-y-4">
-          <div className="flex items-center justify-between pb-3 border-b border-stone-200">
+          <div className="flex items-center justify-between pb-3 border-b border-slate-200">
             <div className="card-title text-sm font-semibold text-slate-800">
               Chronological Forensic Evidence Timeline ({timeline.length} events)
             </div>
             <span className="text-xs font-mono text-indigo-600">SHA-256 Validated</span>
           </div>
 
-          <div className="relative pl-6 space-y-4 border-l border-stone-200 ml-3">
+          <div className="relative pl-6 space-y-4 border-l border-slate-200 ml-3">
             {timeline.map((item: any, idx: number) => (
               <div key={idx} className="relative group">
-                <span className="absolute -left-[31px] top-1 w-3 h-3 rounded-full bg-stone-50 border-2 border-indigo-500" />
-                <div className="p-3 rounded-lg bg-white border border-stone-200 space-y-1">
+                <span className="absolute -left-[31px] top-1 w-3 h-3 rounded-full bg-slate-50 border-2 border-indigo-500" />
+                <div className="p-3 rounded-lg bg-white border border-slate-200 space-y-1">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <span className="text-xs font-semibold text-slate-700">{item.event}</span>
                     <span className="text-[11px] font-mono text-slate-400">{item.time || item.eventTime}</span>
@@ -480,7 +501,7 @@ export default function EntityProfile() {
                   {item.metadata && (
                     <div className="flex flex-wrap gap-1.5 pt-1">
                       {item.metadata.map((m: string, mi: number) => (
-                        <span key={mi} className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-stone-50 border border-stone-200 text-slate-600">
+                        <span key={mi} className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-slate-50 border border-slate-200 text-slate-600">
                           {m}
                         </span>
                       ))}

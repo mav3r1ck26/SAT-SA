@@ -1,26 +1,44 @@
-import { useState } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { 
-  Bell, 
   ChevronDown, 
   User, 
   LogOut, 
   Search, 
-  Filter, 
-  MoreVertical, 
-  HelpCircle, 
   AlertCircle,
-  Shield,
   Settings,
-  LogOut
+  Menu,
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
+import { fetchEntities } from '../../api/client';
 
-export function TopNav() {
+export function TopNav({ onMenuClick }: { onMenuClick: () => void }) {
+  const navigate = useNavigate();
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<any[]>([]);
+
+  useEffect(() => {
+    const query = searchQuery.trim();
+    if (!query) {
+      setSearchResults([]);
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      fetchEntities({ search: query })
+        .then(setSearchResults)
+        .catch(() => setSearchResults([]));
+    }, 200);
+    return () => window.clearTimeout(timer);
+  }, [searchQuery]);
+
+  const openEntity = (id: string) => {
+    navigate(`/entity/${encodeURIComponent(id)}`);
+    setSearchQuery('');
+    setSearchOpen(false);
+  };
   
   const notifications = [
     { id: 1, type: 'finding', title: 'New high-confidence finding', detail: 'EG-247 identified for CSE-014. Confidence 94%.', severity: 'high', time: '2 min ago', read: false },
@@ -35,6 +53,9 @@ export function TopNav() {
     <header className="sticky top-0 z-40 bg-white border-b border-slate-200">
       <div className="flex items-center justify-between h-14 px-4 lg:px-6">
         <div className="flex items-center gap-4 flex-1 min-w-0">
+          <button className="rounded-md p-2 text-slate-500 hover:bg-slate-100 lg:hidden" onClick={onMenuClick} aria-label="Open navigation">
+            <Menu className="h-5 w-5" />
+          </button>
           <div className="relative max-w-md hidden sm:block">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
             <input
@@ -45,11 +66,17 @@ export function TopNav() {
               onFocus={() => setSearchOpen(true)}
               onBlur={() => setTimeout(() => setSearchOpen(false), 200)}
               className="w-full pl-10 pr-4 py-2 text-[12px] bg-slate-50 border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500"
-              placeholder="Search entities, findings, cases..."
             />
-            {searchOpen && searchQuery && (
+            {searchOpen && searchQuery.trim() && (
               <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-md shadow-lg z-50 max-h-60 overflow-auto">
-                <div className="p-2 text-[12px] text-slate-500">Search results would appear here</div>
+                {searchResults.length ? searchResults.slice(0, 8).map(entity => (
+                  <button key={entity.id} className="block w-full px-3 py-2 text-left hover:bg-slate-50" onMouseDown={e => e.preventDefault()} onClick={() => openEntity(entity.id)}>
+                    <span className="text-[12px] font-medium text-slate-800">{entity.id}</span>
+                    <span className="ml-2 text-[11px] text-slate-500">{entity.name} · {entity.sector}</span>
+                  </button>
+                )) : (
+                  <div className="p-2 text-[12px] text-slate-500">No matching entities</div>
+                )}
               </div>
             )}
           </div>
@@ -115,7 +142,7 @@ export function TopNav() {
         <div className="fixed inset-0 z-40 lg:hidden" onClick={() => setNotificationsOpen(false)} />
       )}
       {notificationsOpen && (
-        <div className="fixed right-0 top-14 lg:static lg:inset-auto z-50 w-full lg:w-80 bg-white border-l border-slate-200 shadow-xl lg:shadow-none lg:border-0 lg:bg-transparent h-[calc(100vh-3.5rem)] lg:h-auto overflow-y-auto">
+        <div className="fixed right-0 top-14 z-50 w-full sm:w-80 bg-white border-l border-slate-200 shadow-xl h-[calc(100vh-3.5rem)] overflow-y-auto">
           <div className="p-3 border-b border-slate-200 flex items-center justify-between">
             <div className="text-[13px] font-semibold text-slate-800">Notifications</div>
             <button onClick={() => setNotificationsOpen(false)} className="text-slate-400 hover:text-slate-600 p-1">
@@ -148,14 +175,14 @@ export function TopNav() {
                     </div>
                   </div>
                 </div>
-              </div>
+              </button>
             ))}
             {!notifications.length && (
               <div className="p-6 text-center text-slate-400 text-[12px]">No notifications</div>
             )}
           </div>
+        </div>
         )}
-      </div>
     </header>
   );
 }

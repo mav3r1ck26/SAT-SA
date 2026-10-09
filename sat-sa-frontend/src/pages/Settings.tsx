@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
-import { getConfig, getConfigCategory, setConfig } from '../../api/client';
-import { cn } from '../../lib/utils';
+import { getConfigCategory, setConfig } from '../api/client';
 
 const categories = ['thresholds', 'weights', 'ml', 'scoring', 'peer', 'data_quality', 'general'];
 
@@ -8,19 +7,33 @@ export default function Settings() {
   const [configs, setConfigs] = useState<any[]>([]);
   const [activeCategory, setActiveCategory] = useState('thresholds');
   const [editing, setEditing] = useState<string | null>(null);
-  const [editValue, setEditValue] = useState('');
+  const [editValue, setEditValue] = useState<string | boolean>('');
+  const [loadError, setLoadError] = useState('');
+  const [saveError, setSaveError] = useState('');
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     Promise.all(categories.map(cat => getConfigCategory(cat))).then(results => {
       const all = results.flat();
       setConfigs(all);
-    });
+      setLoadError('');
+    }).catch(() => setLoadError('Could not load configuration. Check that the API and database are running.'));
   }, []);
 
   const handleSave = async (key: string, value: any) => {
-    await setConfig(key, value, 'Admin');
-    setConfigs(prev => prev.map(c => c.key === key ? { ...c, value } : c));
-    setEditing(null);
+    const config = configs.find(c => c.key === key);
+    const parsedValue = config?.dataType === 'number' ? Number(value) : value;
+    setSaving(true);
+    setSaveError('');
+    try {
+      await setConfig(key, parsedValue, 'Admin');
+      setConfigs(prev => prev.map(c => c.key === key ? { ...c, value: parsedValue } : c));
+      setEditing(null);
+    } catch {
+      setSaveError(`Could not save ${key}. Please try again.`);
+    } finally {
+      setSaving(false);
+    }
   };
 
   const renderValue = (config: any) => {
@@ -28,10 +41,10 @@ export default function Settings() {
       return (
         <input
           type={config.dataType === 'number' ? 'number' : config.dataType === 'boolean' ? 'checkbox' : 'text'}
-          value={editValue}
+          value={typeof editValue === 'boolean' ? String(editValue) : editValue}
+          checked={config.dataType === 'boolean' ? Boolean(editValue) : undefined}
           onChange={e => setEditValue(e.target.type === 'checkbox' ? e.target.checked : e.target.value)}
-          onBlur={() => handleSave(config.key, editValue)}
-          onKeyDown={e => e.key === 'Enter' && handleSave(config.key, editValue)}
+          onKeyDown={e => e.key === 'Enter' && config.dataType !== 'boolean' && handleSave(config.key, editValue)}
           className="input w-48"
           autoFocus
         />
@@ -70,6 +83,8 @@ export default function Settings() {
       </div>
 
       <div className="card">
+        {loadError && <div role="alert" className="m-4 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-[12px] text-red-700">{loadError}</div>}
+        {saveError && <div role="alert" className="m-4 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-[12px] text-red-700">{saveError}</div>}
         <div className="table-wrap">
           <table className="data-table">
             <thead>
@@ -88,11 +103,11 @@ export default function Settings() {
                   <td className="text-right">
                     {editing === config.key ? (
                       <div className="flex items-center gap-1">
-                        <button className="btn btn-primary btn-sm" onClick={() => handleSave(config.key, editValue)}>Save</button>
+                        <button className="btn btn-primary btn-sm" disabled={saving} onClick={() => handleSave(config.key, editValue)}>{saving ? 'Saving…' : 'Save'}</button>
                         <button className="btn btn-sm" onClick={() => setEditing(null)}>Cancel</button>
                       </div>
                     ) : (
-                      <button className="btn btn-sm" onClick={() => { setEditing(config.key); setEditValue(String(config.value)); }}>Edit</button>
+                      config.dataType !== 'array' && config.dataType !== 'object' && <button className="btn btn-sm" onClick={() => { setEditing(config.key); setSaveError(''); setEditValue(config.dataType === 'boolean' ? Boolean(config.value) : String(config.value)); }}>Edit</button>
                     )}
                   </td>
                 </tr>

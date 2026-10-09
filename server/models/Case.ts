@@ -43,6 +43,7 @@ export const caseSchema = new Schema({
 }, { timestamps: true })
 
 caseSchema.index({ entityId: 1, openedAt: -1 })
+caseSchema.index({ alertId: 1 })
 caseSchema.index({ behaviour: 1 })
 caseSchema.index({ closedAt: -1 })
 caseSchema.index({ period: 1 })

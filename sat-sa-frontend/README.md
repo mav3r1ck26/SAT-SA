@@ -1,32 +1,26 @@
-# React + TypeScript + Vite
+# SAT-SA Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+This is an alternate frontend retained for reference. The default application now uses the refined frontend in the repository root `src/` directory.
 
-Currently, two official plugins are available:
+## Development
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+To run this alternate frontend explicitly:
 
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the Oxlint configuration
-
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
-
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+```bash
+npm install
+npm --prefix sat-sa-frontend install
+npm --prefix sat-sa-frontend run dev
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+This starts Vite on `http://127.0.0.1:5173`. Its proxy sends `/api` requests to the Node API on port `3101`. Start MongoDB and the API separately.
+
+To start only the frontend, run `npm run dev`. To run the Python ML service, start it separately from `ml-backend` with `python -m src.api`.
+
+## Frontend commands
+
+```bash
+npm --prefix sat-sa-frontend run dev
+npm --prefix sat-sa-frontend run build
+npm --prefix sat-sa-frontend run lint
+npm --prefix sat-sa-frontend run preview
+```

@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { fetchIngestionQuality, uploadDataFile } from '../../api/client';
+import React, { useEffect, useState } from 'react';
+import { fetchIngestionQuality, uploadDataFile } from '../api/client';
 import { Upload, FileText, AlertTriangle, CheckCircle2 } from 'lucide-react';
 
 export default function DataIngestion() {
@@ -124,7 +124,7 @@ export default function DataIngestion() {
                 <table className="data-table">
                   <thead><tr><th>Source</th><th>Records</th><th>Valid</th><th>Quality</th><th>Status</th><th>Date</th></tr></thead>
                   <tbody>
-                    {batches.map((b, i) => (
+                    {batches.map((b: any, i: number) => (
                       <tr key={i}>
                         <td className="text-[12px]">{b.source}</td>
                         <td className="font-mono text-[12px]">{b.recordsReceived}</td>

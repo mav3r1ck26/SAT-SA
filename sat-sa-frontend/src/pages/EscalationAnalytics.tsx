@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import { fetchEscalationAnalytics } from '../../api/client';
+import { fetchEscalationAnalytics } from '../api/client';
 import StatCard from '../components/StatCard';
-import { Donut, BarChart } from '../../components/charts';
+import { Donut, BarChart } from '../components/charts';
 import { AlertTriangle } from 'lucide-react';
 
 export default function EscalationAnalytics() {
@@ -51,7 +51,7 @@ export default function EscalationAnalytics() {
         </div>
         <div className="card p-4">
           <div className="label mb-3">Escalation Delay Distribution</div>
-          <BarChart data={delays.map(d => ({ label: d.hours || d.label, value: d.count }))} color="#3b82f6" height={120} />
+          <BarChart data={delays.map((d: any) => ({ label: d.hours || d.label, value: d.count }))} color="#3b82f6" height={120} />
         </div>
       </div>
 
@@ -59,7 +59,7 @@ export default function EscalationAnalytics() {
         <div className="card p-4">
           <div className="label mb-3">Escalation Paths</div>
           <div className="flex flex-col gap-2.5 mt-2">
-            {paths.map((p, i) => (
+            {paths.map((p: any, i: number) => (
               <div key={i}>
                 <div className="flex justify-between mb-1">
                   <span className="text-[12px] text-slate-600 font-medium">{p.path}</span>
@@ -82,7 +82,7 @@ export default function EscalationAnalytics() {
               <table className="data-table">
                 <thead><tr><th>Severity</th><th>Escalated</th><th>Not Escalated</th><th>Escalation Rate</th></tr></thead>
                 <tbody>
-                  {severityMatrix.map((r, i) => {
+                  {severityMatrix.map((r: any, i: number) => {
                     const rate = ((r.escalated / (r.escalated + r.notEscalated)) * 100).toFixed(1);
                     const isAnomaly = (r.severity === 'Critical' && Number(rate) < 80) || (r.severity === 'High' && Number(rate) < 70);
                     return (
@@ -106,7 +106,7 @@ export default function EscalationAnalytics() {
       <div className="card p-4">
         <div className="label mb-3">Escalation Anomalies</div>
         <div className="grid grid-cols-2 gap-3">
-          {anomalies.map((a, i) => (
+          {anomalies.map((a: any, i: number) => (
             <div key={i} className={`flex items-center gap-3 rounded-lg border px-3 py-2.5 ${a.severity === 'Critical' ? 'bg-red-50 border-red-200' : 'bg-orange-50 border-orange-200'}`}>
               <AlertTriangle className={`w-4 h-4 shrink-0 ${a.severity === 'Critical' ? 'text-red-500' : 'text-orange-500'}`} />
               <div className="flex-1">

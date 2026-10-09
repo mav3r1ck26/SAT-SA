@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import { fetchInvestigationAnalytics } from '../../api/client';
+import { fetchInvestigationAnalytics } from '../api/client';
 import StatCard from '../components/StatCard';
-import { BarChart, MultiBar } from '../../components/charts';
+import { BarChart } from '../components/charts';
 
 export default function InvestigationAnalytics() {
   const [data, setData] = useState<any>(null);
@@ -15,9 +15,6 @@ export default function InvestigationAnalytics() {
   const depth = data?.depth ?? [];
   const patterns = data?.patterns ?? [];
   const evidenceFrequency = data?.evidenceFrequency ?? [];
-  const workload = data?.workload ?? [];
-  const reopening = data?.reopening ?? [];
-  const behaviour = data?.behaviour ?? [];
   const totalCases = kpis.totalCases ?? 32481;
 
   return (
@@ -38,11 +35,11 @@ export default function InvestigationAnalytics() {
       <div className="grid grid-cols-2 gap-4 mb-4">
         <div className="card p-4">
           <div className="label mb-3">Investigation Duration Distribution</div>
-          <BarChart data={durationDistribution.map(d => ({ label: d.range || d.label, value: d.count }))} height={120} />
+          <BarChart data={durationDistribution.map((d: any) => ({ label: d.range || d.label, value: d.count }))} height={120} />
         </div>
         <div className="card p-4">
           <div className="label mb-3">Investigation Depth</div>
-          <BarChart data={depth.map(d => ({ label: d.depth || d.label, value: d.count }))} color="#10b981" height={120} />
+          <BarChart data={depth.map((d: any) => ({ label: d.depth || d.label, value: d.count }))} color="#10b981" height={120} />
         </div>
       </div>
 
@@ -50,7 +47,7 @@ export default function InvestigationAnalytics() {
         <div className="card p-4">
           <div className="label mb-3">Repetitive Investigation Patterns</div>
           <div className="flex flex-col gap-2.5 mt-2">
-            {patterns.map((p, i) => (
+            {patterns.map((p: any, i: number) => (
               <div key={i} className="flex items-center gap-3 py-2 border-b border-slate-100 last:border-0">
                 <span className={`badge border text-[10.5px] ${p.severity === 'Critical' ? 'bg-red-50 text-red-700 border-red-200' : p.severity === 'High' ? 'bg-orange-50 text-orange-700 border-orange-200' : 'bg-amber-50 text-amber-700 border-amber-200'}`}>{p.severity}</span>
                 <span className="text-[12px] text-slate-700 flex-1">{p.pattern}</span>
@@ -62,7 +59,7 @@ export default function InvestigationAnalytics() {
         <div className="card p-4">
           <div className="label mb-3">Evidence Attachment Frequency</div>
           <div className="flex flex-col gap-3 mt-2">
-            {evidenceFrequency.map((e, i) => (
+            {evidenceFrequency.map((e: any, i: number) => (
               <div key={i}>
                 <div className="flex justify-between mb-1">
                   <span className="text-[12px] text-slate-600 font-medium">{e.category}</span>

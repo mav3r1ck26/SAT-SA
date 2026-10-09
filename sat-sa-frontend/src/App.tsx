@@ -1,22 +1,22 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { Layout } from './components/layout/Layout';
-import { Overview } from './pages/Overview';
-import { EntitiesList } from './pages/EntitiesList';
-import { EntityProfile } from './pages/EntityProfile';
-import { ExecutionGaps } from './pages/ExecutionGaps';
-import { NegativeSpace } from './pages/NegativeSpace';
-import { AlertAnalytics } from './pages/AlertAnalytics';
-import { InvestigationAnalytics } from './pages/InvestigationAnalytics';
-import { EscalationAnalytics } from './pages/EscalationAnalytics';
-import { PeerBenchmarking } from './pages/PeerBenchmarking';
-import { ReviewPrioritisation } from './pages/ReviewPrioritisation';
-import { EvidenceExplorer } from './pages/EvidenceExplorer';
-import { Reports } from './pages/Reports';
-import { DataIngestion } from './pages/DataIngestion';
-import { Validation } from './pages/Validation';
-import { AuditTrail } from './pages/AuditTrail';
-import { Settings } from './pages/Settings';
-import { Anomalies } from './pages/Anomalies';
+import Overview from './pages/Overview';
+import EntitiesList from './pages/EntitiesList';
+import EntityProfile from './pages/EntityProfile';
+import ExecutionGaps from './pages/ExecutionGaps';
+import NegativeSpace from './pages/NegativeSpace';
+import AlertAnalytics from './pages/AlertAnalytics';
+import InvestigationAnalytics from './pages/InvestigationAnalytics';
+import EscalationAnalytics from './pages/EscalationAnalytics';
+import PeerBenchmarking from './pages/PeerBenchmarking';
+import ReviewPrioritisation from './pages/ReviewPrioritisation';
+import EvidenceExplorer from './pages/EvidenceExplorer';
+import Reports from './pages/Reports';
+import DataIngestion from './pages/DataIngestion';
+import Validation from './pages/Validation';
+import AuditTrail from './pages/AuditTrail';
+import Settings from './pages/Settings';
+import Anomalies from './pages/Anomalies';
 
 function App() {
   return (

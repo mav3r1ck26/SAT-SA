@@ -6,7 +6,8 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
     ...options,
   });
   if (!res.ok) throw new Error(`API error ${res.status}: ${await res.text()}`);
-  return res.json();
+  const json = await res.json();
+  return json && typeof json === 'object' && 'data' in json ? json.data as T : json as T;
 }
 
 // ---- Entities ----
@@ -127,7 +128,8 @@ export async function uploadDataFile(file: File, source?: string) {
   if (source) formData.append('source', source);
   const res = await fetch(`${BASE}/ingestion/upload`, { method: 'POST', body: formData });
   if (!res.ok) throw new Error(`Upload failed: ${res.status}`);
-  return res.json();
+  const json = await res.json();
+  return json && typeof json === 'object' && 'data' in json ? json.data : json;
 }
 
 export const ingestFromAPI = (records: any[]) =>
@@ -168,3 +170,16 @@ export const fetchPlaybooks = () =>
 
 export const fetchPlaybook = (id: string) =>
   request<any>(`/ml/playbooks/${id}`);
+
+// ---- Configuration ----
+export const getConfig = (key: string) =>
+  request<any>(`/configuration/${encodeURIComponent(key)}`);
+
+export const getConfigCategory = (category: string) =>
+  request<any[]>(`/configuration/category/${encodeURIComponent(category)}`);
+
+export const setConfig = (key: string, value: unknown, modifiedBy: string) =>
+  request<void>(`/configuration/${encodeURIComponent(key)}`, {
+    method: 'PUT',
+    body: JSON.stringify({ value, modifiedBy }),
+  });

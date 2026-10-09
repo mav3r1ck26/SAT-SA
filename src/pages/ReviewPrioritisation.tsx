@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { useApp } from '../context/AppContext'
-import { fetchReviewQueue, reviewFinding, logAuditAction, fetchEvidenceTimeline } from '../api/client'
+import { fetchReviewQueue, reviewFinding, logAuditAction, fetchFindingEvidence, fetchAlertEvidence } from '../api/client'
 import { SeverityBadge, Confidence, TelemetryPulse, MitreBadge } from '../components/ui'
 import { 
   AlertOctagon, CheckCircle2, UserCheck, ShieldAlert, 
@@ -15,18 +15,6 @@ const EXAMINERS = [
   'Examiner-12 (Forensics)',
   'Supervisor-02 (Admin)'
 ]
-
-const sampleEvidenceTimelines: Record<string, any[]> = {
-  default: [
-    { event: 'Alert generated — critical boundary anomaly', actor: 'SIEM-Correlator', role: 'Detection', time: '14:23:17 IST', severity: 'Critical', meta: 'Rule: T1059.001 (Command & Scripting)' },
-    { event: 'SOC Level-1 triage analyst assigned', actor: 'SOC-L1-004', role: 'Analyst', time: '14:24:53 IST', severity: 'Low', meta: 'Triage Queue: Edge Perimeter' },
-    { event: 'Preliminary case opened', actor: 'SOC-L1-004', role: 'Analyst', time: '14:26:09 IST', severity: 'Low', meta: 'Asset: SCADA-HMI-01' },
-    { event: 'Alert prematurely disposed as false positive', actor: 'SOC-L1-004', role: 'Analyst', time: '14:31:02 IST', severity: 'High', meta: 'Duration: 4.9 min (<5m threshold)' },
-    { event: 'Supervisory peer baseline check: 8.5x faster than peer median', actor: 'SAT-SA Engine', role: 'Automated Audit', time: '14:31:02 IST', severity: 'Critical', meta: 'Peer Median: 42 min' },
-    { event: 'Statutory 6h escalation record absent from log', actor: 'SAT-SA Auditor', role: 'Supervisory Rule', time: '—', severity: 'Critical', meta: 'Breach: Mandatory Incident Notification' },
-    { event: 'Cryptographic audit ledger committed', actor: 'Ledger Node', role: 'Audit Journal', time: '14:31:03 IST', severity: 'Low', meta: 'SHA-256: 4f98...c201' }
-  ]
-}
 
 export default function ReviewPrioritisation() {
   const { setCurrentPage, setSelectedEntity } = useApp()
@@ -122,10 +110,15 @@ export default function ReviewPrioritisation() {
       return
     }
     setExpandedEvidenceId(itemKey)
-    if (!evidenceMap[itemKey] && entityId) {
+    if (!evidenceMap[itemKey]) {
       setLoadingEvidence(prev => ({ ...prev, [itemKey]: true }))
       try {
-        const res = await fetchEvidenceTimeline(entityId)
+        const item = queue.find(candidate => (candidate.ref || candidate.findingId || candidate.id) === itemKey)
+        const res = item?.alertId
+          ? await fetchAlertEvidence(item.alertId)
+          : item?.findingId
+            ? await fetchFindingEvidence(item.findingId)
+            : entityId ? await fetchAlertEvidence(itemKey) : null
         if (res?.timeline?.length) {
           const events = res.timeline.map((evt: any) => ({
             event: evt.event || evt.eventType,
@@ -136,11 +129,9 @@ export default function ReviewPrioritisation() {
             meta: (evt.metadata && evt.metadata.join(', ')) || `Type: ${evt.eventType}`
           }))
           setEvidenceMap(prev => ({ ...prev, [itemKey]: events }))
-        } else {
-          setEvidenceMap(prev => ({ ...prev, [itemKey]: sampleEvidenceTimelines.default }))
-        }
+        } else setEvidenceMap(prev => ({ ...prev, [itemKey]: [] }))
       } catch {
-        setEvidenceMap(prev => ({ ...prev, [itemKey]: sampleEvidenceTimelines.default }))
+        setEvidenceMap(prev => ({ ...prev, [itemKey]: [] }))
       }
       setLoadingEvidence(prev => ({ ...prev, [itemKey]: false }))
     }
@@ -175,7 +166,7 @@ export default function ReviewPrioritisation() {
 
   return (
     <div className="p-6 max-w-[1700px] mx-auto space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-stone-200 pb-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200 pb-4">
         <div>
           <div className="flex items-center gap-3">
             <h1 className="page-title text-xl font-bold tracking-tight text-slate-900">Supervisory Manual Review Queue</h1>
@@ -188,7 +179,7 @@ export default function ReviewPrioritisation() {
 
         <div className="flex items-center gap-2">
           <select 
-            className="select bg-white border-stone-300 text-slate-700 text-xs py-1 font-mono"
+            className="select bg-white border-slate-300 text-slate-700 text-xs py-1 font-mono"
             value={filterSeverity}
             onChange={e => setFilterSeverity(e.target.value)}
           >
@@ -215,7 +206,7 @@ export default function ReviewPrioritisation() {
         </div>
       </div>
 
-      <div className="flex items-center justify-between gap-3 bg-stone-50 p-3 rounded-lg border border-stone-200">
+      <div className="flex items-center justify-between gap-3 bg-slate-50 p-3 rounded-lg border border-slate-200">
         <div className="flex items-center gap-3">
           <span className="badge text-xs font-mono bg-indigo-50 text-indigo-600 border-indigo-200">
             AUTOMATED ENSEMBLE RANKING
@@ -237,23 +228,23 @@ export default function ReviewPrioritisation() {
           const assignedExaminer = assignedMap[itemKey]
           const isAssigning = assigningId === itemKey
           const isEvidenceExpanded = expandedEvidenceId === itemKey
-          const timeline = evidenceMap[itemKey] || sampleEvidenceTimelines[itemKey] || sampleEvidenceTimelines.default
+          const timeline = evidenceMap[itemKey] || []
           const isLoadingEvidence = loadingEvidence[itemKey]
 
           return (
-            <div key={itemKey} className="card overflow-hidden border-stone-200 hover:border-stone-300 transition-all">
+            <div key={itemKey} className="card overflow-hidden border-slate-200 hover:border-slate-300 transition-all">
               {/* Header Bar */}
               <div className={`flex flex-wrap items-center justify-between gap-3 px-4 py-2.5 border-l-4 ${
                 adjudicatedStatus === 'Confirmed'
-                  ? 'bg-emerald-50 border-l-emerald-500 border-b border-stone-200'
+                  ? 'bg-emerald-50 border-l-emerald-500 border-b border-slate-200'
                   : adjudicatedStatus === 'Rejected'
-                  ? 'bg-rose-50 border-l-rose-500 border-b border-stone-200'
+                  ? 'bg-rose-50 border-l-rose-500 border-b border-slate-200'
                   : isCritical 
-                  ? 'bg-rose-50 border-l-rose-500 border-b border-stone-200' 
-                  : 'bg-amber-50 border-l-amber-500 border-b border-stone-200'
+                  ? 'bg-rose-50 border-l-rose-500 border-b border-slate-200' 
+                  : 'bg-amber-50 border-l-amber-500 border-b border-slate-200'
               }`}>
                 <div className="flex items-center gap-3">
-                  <span className="text-[11px] font-mono font-bold uppercase tracking-wider text-indigo-600 bg-white px-2 py-0.5 rounded border border-stone-200">
+                  <span className="text-[11px] font-mono font-bold uppercase tracking-wider text-indigo-600 bg-white px-2 py-0.5 rounded border border-slate-200">
                     PRIORITY #{String(item.priority ?? idx + 1).padStart(2, '0')}
                   </span>
                   <SeverityBadge severity={item.severity ?? 'High'} />
@@ -280,7 +271,7 @@ export default function ReviewPrioritisation() {
                     </span>
                   )}
                   <Confidence value={item.confidence ?? 85} compact />
-                  <span className="text-slate-500 bg-white px-2 py-0.5 rounded border border-stone-200">
+                  <span className="text-slate-500 bg-white px-2 py-0.5 rounded border border-slate-200">
                     {item.evidenceCount ?? 0} evidence records
                   </span>
                 </div>
@@ -288,9 +279,13 @@ export default function ReviewPrioritisation() {
 
               {/* Body */}
               <div className="p-5 space-y-4">
-                <p className="text-sm font-semibold text-slate-900">{item.reason || item.finding || item.title}</p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="text-sm font-semibold text-slate-900">{item.reason || item.finding || item.title}</p>
+                  {(item.findingType || item.source) && <span className="badge border border-indigo-200 bg-indigo-50 text-indigo-700 text-[10px] font-mono">{item.findingType || item.source}</span>}
+                  {item.alertCategory && <span className="badge border border-slate-300 bg-white text-slate-600 text-[10px] font-mono">{item.alertCategory} alert</span>}
+                </div>
 
-                <div className="bg-stone-50 rounded-md p-3.5 border border-stone-200 space-y-1.5">
+                <div className="bg-slate-50 rounded-md p-3.5 border border-slate-200 space-y-1.5">
                   <div className="label text-indigo-600 font-mono text-[10px] uppercase">Forensic Flagging Triggers</div>
                   <ul className="space-y-1">
                     {(item.reasons || item.reasonWrap || [item.reason]).filter(Boolean).map((r: string, j: number) => (
@@ -304,13 +299,13 @@ export default function ReviewPrioritisation() {
 
                 {/* Inline Examiner Assignment Dropdown */}
                 {isAssigning && (
-                  <div className="p-3 bg-white rounded-md border border-stone-300 flex flex-wrap items-center gap-2">
+                  <div className="p-3 bg-white rounded-md border border-slate-300 flex flex-wrap items-center gap-2">
                     <span className="text-xs font-mono text-indigo-600">Select Designated Examiner:</span>
                     {EXAMINERS.map(ex => (
                       <button
                         key={ex}
                         onClick={() => handleAssign(itemKey, ex, item.entityId || item.entity, item.ref || item.findingId)}
-                        className="btn btn-sm text-xs font-mono text-slate-700 border-stone-300 hover:border-indigo-600"
+                        className="btn btn-sm text-xs font-mono text-slate-700 border-slate-300 hover:border-indigo-600"
                       >
                         {ex}
                       </button>
@@ -326,8 +321,8 @@ export default function ReviewPrioritisation() {
 
                 {/* Inline Evidence Chain-of-Custody Timeline Drawer */}
                 {isEvidenceExpanded && (
-                  <div className="p-4 bg-white rounded-lg border border-stone-200 space-y-3">
-                    <div className="flex items-center justify-between border-b border-stone-200 pb-2">
+                  <div className="p-4 bg-white rounded-lg border border-slate-200 space-y-3">
+                    <div className="flex items-center justify-between border-b border-slate-200 pb-2">
                       <div className="flex items-center gap-2 text-xs font-mono text-indigo-600 font-bold">
                         <Fingerprint className="w-4 h-4 text-indigo-600" />
                         Chronological Chain-of-Custody Timeline for {item.ref || item.findingId}
@@ -347,7 +342,8 @@ export default function ReviewPrioritisation() {
                         Loading live forensic event stream for {item.entityId || item.entity}...
                       </div>
                     ) : (
-                      <div className="space-y-2 border-l-2 border-stone-200 ml-2 pl-4 py-1">
+                      <div className="space-y-2 border-l-2 border-slate-200 ml-2 pl-4 py-1">
+                        {timeline.length === 0 && <div className="text-xs text-slate-500 py-2">No event records are linked to this review item yet.</div>}
                         {timeline.map((evt: any, i: number) => (
                           <div key={i} className="text-xs relative pb-2 last:pb-0">
                             <span className={`absolute -left-[21px] top-1.5 w-2.5 h-2.5 rounded-full border border-white ${
@@ -355,7 +351,7 @@ export default function ReviewPrioritisation() {
                             }`} />
                             <div className="flex items-center justify-between gap-2">
                               <span className="font-semibold text-slate-700">{evt.event}</span>
-                              <span className="text-[10px] font-mono text-indigo-600 bg-white px-1.5 py-0.2 rounded border border-stone-200 shrink-0">
+                              <span className="text-[10px] font-mono text-indigo-600 bg-white px-1.5 py-0.2 rounded border border-slate-200 shrink-0">
                                 {evt.time}
                               </span>
                             </div>
@@ -402,7 +398,7 @@ export default function ReviewPrioritisation() {
                     </button>
 
                     {adjudicatedStatus ? (
-                      <span className="text-xs font-mono text-slate-500 px-3 py-1 rounded bg-white border border-stone-200">
+                      <span className="text-xs font-mono text-slate-500 px-3 py-1 rounded bg-white border border-slate-200">
                         {adjudicatedStatus === 'Confirmed' ? '✓ Confirmed' : '✕ Dismissed'}
                       </span>
                     ) : (
@@ -431,7 +427,7 @@ export default function ReviewPrioritisation() {
             </div>
           )
         }) : (
-          <div className="card p-12 text-center text-xs font-mono text-slate-500 bg-stone-50 border-stone-200">
+          <div className="card p-12 text-center text-xs font-mono text-slate-500 bg-slate-50 border-slate-200">
             No supervisory examination items currently pending in queue.
           </div>
         )}

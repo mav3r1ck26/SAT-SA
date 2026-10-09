@@ -37,19 +37,19 @@ export default function InvestigationAnalytics() {
 
   return (
     <div className="p-6 max-w-[1700px] mx-auto space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-cyber-800 pb-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200 pb-4">
         <div>
           <div className="flex items-center gap-3">
             <h1 className="page-title text-2xl font-bold tracking-tight">SOC Investigation Rigor & Forensic Analytics</h1>
             <TelemetryPulse active status="online" label="ANALYST BEHAVIOR STREAM" />
           </div>
-          <p className="page-subtitle text-cyber-400 mt-0.5">
+          <p className="page-subtitle text-slate-500 mt-0.5">
             Measurement of forensic investigation depth, evidence attachment rigor, triage latency, and rapid closure anomalies
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={handleExport} className="btn btn-sm flex items-center gap-1.5 text-cyber-300 hover:text-cyber-100">
-            <Download className="w-3.5 h-3.5 text-neonCyan" /> Export Investigation Logs
+          <button onClick={handleExport} className="btn btn-sm flex items-center gap-1.5 text-slate-600 hover:text-slate-800">
+            <Download className="w-3.5 h-3.5 text-indigo-600" /> Export Investigation Logs
           </button>
         </div>
       </div>
@@ -66,10 +66,10 @@ export default function InvestigationAnalytics() {
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
         <div className="lg:col-span-6 card p-5">
           <div className="label mb-3 flex items-center justify-between">
-            <span className="flex items-center gap-2 text-cyber-200 font-bold">
-              <Clock className="w-4 h-4 text-neonCyan" /> Investigation Duration Profile (Triage Velocity)
+            <span className="flex items-center gap-2 text-slate-700 font-bold">
+              <Clock className="w-4 h-4 text-indigo-600" /> Investigation Duration Profile (Triage Velocity)
             </span>
-            <span className="text-[10px] font-mono text-cyber-400">HISTOGRAM</span>
+            <span className="text-[10px] font-mono text-slate-500">HISTOGRAM</span>
           </div>
           <BarChart 
             data={durationDistribution.map((d: any) => ({ label: d.range || d.label, value: d.count }))} 
@@ -80,10 +80,10 @@ export default function InvestigationAnalytics() {
 
         <div className="lg:col-span-6 card p-5">
           <div className="label mb-3 flex items-center justify-between">
-            <span className="flex items-center gap-2 text-cyber-200 font-bold">
-              <Fingerprint className="w-4 h-4 text-neonEmerald" /> Forensic Evidence Depth per Incident
+            <span className="flex items-center gap-2 text-slate-700 font-bold">
+              <Fingerprint className="w-4 h-4 text-emerald-700" /> Forensic Evidence Depth per Incident
             </span>
-            <span className="text-[10px] font-mono text-cyber-400">ARTIFACT COUNT</span>
+            <span className="text-[10px] font-mono text-slate-500">ARTIFACT COUNT</span>
           </div>
           <BarChart 
             data={depth.map((d: any) => ({ label: d.depth || d.label, value: d.count }))} 
@@ -97,23 +97,23 @@ export default function InvestigationAnalytics() {
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
         <div className="lg:col-span-6 card p-5">
           <div className="label mb-3 flex items-center justify-between">
-            <span className="text-cyber-200 font-bold">Repetitive Closure & Rubber-Stamp Patterns</span>
+            <span className="text-slate-700 font-bold">Repetitive Closure & Rubber-Stamp Patterns</span>
             <span className="badge badge-warning text-xs font-mono">SUPERVISORY ANOMALY</span>
           </div>
           <div className="space-y-2.5 mt-2">
             {patterns.map((p: any, i: number) => (
-              <div key={i} className="flex flex-wrap items-center justify-between p-3 rounded-lg bg-cyber-950/70 border border-cyber-800 gap-2">
+              <div key={i} className="flex flex-wrap items-center justify-between p-3 rounded-lg bg-slate-50/70 border border-slate-200 gap-2">
                 <span className={`badge border text-[10px] font-mono ${
                   p.severity === 'Critical' 
-                    ? 'bg-red-950/80 text-neonRose border-red-800/60' 
+                    ? 'bg-rose-50/80 text-rose-700 border-rose-200/60' 
                     : p.severity === 'High' 
-                    ? 'bg-orange-950/80 text-orange-400 border-orange-800/60' 
-                    : 'bg-amber-950/80 text-neonAmber border-amber-800/60'
+                    ? 'bg-orange-50/80 text-orange-700 border-orange-200/60' 
+                    : 'bg-amber-50/80 text-amber-700 border-amber-200/60'
                 }`}>
                   {p.severity}
                 </span>
-                <span className="text-xs font-medium text-cyber-100 flex-1 truncate">{p.pattern}</span>
-                <span className="font-mono text-xs font-bold text-neonCyan">{(p.count ?? 0).toLocaleString()} cases</span>
+                <span className="text-xs font-medium text-slate-800 flex-1 truncate">{p.pattern}</span>
+                <span className="font-mono text-xs font-bold text-indigo-600">{(p.count ?? 0).toLocaleString()} cases</span>
               </div>
             ))}
           </div>
@@ -121,18 +121,18 @@ export default function InvestigationAnalytics() {
 
         <div className="lg:col-span-6 card p-5">
           <div className="label mb-3 flex items-center justify-between">
-            <span className="text-cyber-200 font-bold">Evidence Attachment Frequency by Category</span>
-            <span className="text-[10px] font-mono text-cyber-400">AVG PER CASE</span>
+            <span className="text-slate-700 font-bold">Evidence Attachment Frequency by Category</span>
+            <span className="text-[10px] font-mono text-slate-500">AVG PER CASE</span>
           </div>
           <div className="space-y-3 mt-2">
             {evidenceFrequency.map((e: any, i: number) => (
-              <div key={i} className="bg-cyber-950/70 p-3 rounded-lg border border-cyber-800">
+              <div key={i} className="bg-slate-50/70 p-3 rounded-lg border border-slate-200">
                 <div className="flex justify-between items-center mb-1.5">
-                  <span className="text-xs font-medium text-cyber-200">{e.category}</span>
-                  <span className="font-mono text-xs font-bold text-neonCyan">{e.avgPerCase} / case</span>
+                  <span className="text-xs font-medium text-slate-700">{e.category}</span>
+                  <span className="font-mono text-xs font-bold text-indigo-600">{e.avgPerCase} / case</span>
                 </div>
-                <div className="risk-bar-track h-2 bg-cyber-900">
-                  <div className="risk-bar-fill bg-neonCyan shadow-glow-cyan" style={{ width: `${Math.min(100, ((e.avgPerCase ?? 1) / 3) * 100)}%` }} />
+                <div className="risk-bar-track h-2 bg-slate-100">
+                  <div className="risk-bar-fill bg-indigo-600 shadow-sm" style={{ width: `${Math.min(100, ((e.avgPerCase ?? 1) / 3) * 100)}%` }} />
                 </div>
               </div>
             ))}
@@ -144,10 +144,10 @@ export default function InvestigationAnalytics() {
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
         <div className="lg:col-span-6 card p-5">
           <div className="label mb-3 flex items-center justify-between">
-            <span className="flex items-center gap-2 text-cyber-200 font-bold">
-              <UserCheck className="w-4 h-4 text-neonCyan" /> SOC Tier-2 Investigator Workload & Median Duration
+            <span className="flex items-center gap-2 text-slate-700 font-bold">
+              <UserCheck className="w-4 h-4 text-indigo-600" /> SOC Tier-2 Investigator Workload & Median Duration
             </span>
-            <span className="text-[10px] font-mono text-cyber-400">ANALYST AUDIT</span>
+            <span className="text-[10px] font-mono text-slate-500">ANALYST AUDIT</span>
           </div>
           <div className="table-wrap">
             <table className="data-table">
@@ -161,9 +161,9 @@ export default function InvestigationAnalytics() {
               <tbody>
                 {workload.map((w: any, i: number) => (
                   <tr key={i}>
-                    <td className="mono-id text-neonCyan font-bold">{w.investigator}</td>
-                    <td className="font-mono text-xs text-cyber-200 text-center font-semibold">{w.cases}</td>
-                    <td className="font-mono text-xs text-cyber-300 text-right">{w.avgDuration} min</td>
+                    <td className="mono-id text-indigo-600 font-bold">{w.investigator}</td>
+                    <td className="font-mono text-xs text-slate-700 text-center font-semibold">{w.cases}</td>
+                    <td className="font-mono text-xs text-slate-600 text-right">{w.avgDuration} min</td>
                   </tr>
                 ))}
               </tbody>
@@ -173,10 +173,10 @@ export default function InvestigationAnalytics() {
 
         <div className="lg:col-span-6 card p-5">
           <div className="label mb-3 flex items-center justify-between">
-            <span className="flex items-center gap-2 text-cyber-200 font-bold">
-              <AlertCircle className="w-4 h-4 text-neonRose" /> Post-Closure Reopening Frequency by Entity
+            <span className="flex items-center gap-2 text-slate-700 font-bold">
+              <AlertCircle className="w-4 h-4 text-rose-700" /> Post-Closure Reopening Frequency by Entity
             </span>
-            <span className="text-[10px] font-mono text-neonRose">SECONDARY AUDIT</span>
+            <span className="text-[10px] font-mono text-rose-700">SECONDARY AUDIT</span>
           </div>
           <div className="table-wrap">
             <table className="data-table">
@@ -191,10 +191,10 @@ export default function InvestigationAnalytics() {
               <tbody>
                 {reopening.map((r: any, i: number) => (
                   <tr key={i}>
-                    <td className="mono-id text-neonCyan font-bold">{r.entity}</td>
-                    <td className="font-mono text-xs text-neonRose text-center font-bold">{r.reopened}</td>
-                    <td className="font-mono text-xs text-cyber-300 text-center">{r.total}</td>
-                    <td className="font-mono text-xs font-bold text-neonAmber text-right">
+                    <td className="mono-id text-indigo-600 font-bold">{r.entity}</td>
+                    <td className="font-mono text-xs text-rose-700 text-center font-bold">{r.reopened}</td>
+                    <td className="font-mono text-xs text-slate-600 text-center">{r.total}</td>
+                    <td className="font-mono text-xs font-bold text-amber-700 text-right">
                       {((r.reopened / (r.total || 1)) * 100).toFixed(1)}%
                     </td>
                   </tr>
@@ -207,21 +207,21 @@ export default function InvestigationAnalytics() {
 
       {/* Investigation Behaviour Classification Banners */}
       <div className="card p-5">
-        <div className="label mb-2 text-cyber-200 font-bold">Investigation Behavioral Stratification</div>
-        <p className="text-xs text-cyber-400 mb-4 font-mono">
+        <div className="label mb-2 text-slate-700 font-bold">Investigation Behavioral Stratification</div>
+        <p className="text-xs text-slate-500 mb-4 font-mono">
           Machine-learning clustering of entire case portfolio against standard forensic investigation heuristics
         </p>
 
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
           {behaviour.map((b: any, i: number) => {
             const styles: Record<string, { border: string, bg: string, text: string }> = {
-              'Normal': { border: 'border-emerald-800/80', bg: 'bg-emerald-950/40', text: 'text-neonEmerald' },
-              'Superficial': { border: 'border-amber-800/80', bg: 'bg-amber-950/40', text: 'text-neonAmber' },
-              'Repetitive': { border: 'border-orange-800/80', bg: 'bg-orange-950/40', text: 'text-orange-400' },
-              'Unusually Fast': { border: 'border-red-800/80', bg: 'bg-red-950/40', text: 'text-neonRose' },
-              'Requires Review': { border: 'border-cyan-800/80', bg: 'bg-cyan-950/40', text: 'text-neonCyan' }
+              'Normal': { border: 'border-emerald-200/80', bg: 'bg-emerald-50/40', text: 'text-emerald-700' },
+              'Superficial': { border: 'border-amber-200/80', bg: 'bg-amber-50/40', text: 'text-amber-700' },
+              'Repetitive': { border: 'border-orange-200/80', bg: 'bg-orange-50/40', text: 'text-orange-700' },
+              'Unusually Fast': { border: 'border-rose-200/80', bg: 'bg-rose-50/40', text: 'text-rose-700' },
+              'Requires Review': { border: 'border-cyan-200/80', bg: 'bg-cyan-50/40', text: 'text-indigo-600' }
             }
-            const currentStyle = styles[b.classification] || { border: 'border-cyber-700', bg: 'bg-cyber-900', text: 'text-cyber-100' }
+            const currentStyle = styles[b.classification] || { border: 'border-slate-300', bg: 'bg-slate-100', text: 'text-slate-800' }
             return (
               <div key={i} className={`rounded-lg border ${currentStyle.border} ${currentStyle.bg} p-3.5 space-y-1`}>
                 <div className={`text-[10.5px] font-mono font-bold uppercase tracking-wider ${currentStyle.text}`}>
@@ -230,7 +230,7 @@ export default function InvestigationAnalytics() {
                 <div className={`font-mono text-xl font-extrabold ${currentStyle.text}`}>
                   {(b.count ?? 0).toLocaleString()}
                 </div>
-                <div className="text-[10px] font-mono text-cyber-400">
+                <div className="text-[10px] font-mono text-slate-500">
                   {((b.count ?? 0) / (totalCases || 1) * 100).toFixed(1)}% of cases
                 </div>
               </div>

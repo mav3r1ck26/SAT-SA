@@ -5,7 +5,7 @@ export function StackedBar({ data }: { data: { level: string; count: number; col
   const total = data.reduce((s, d) => s + d.count, 0) || 1
   return (
     <div>
-      <div className="flex h-3.5 rounded-lg overflow-hidden bg-stone-200 border border-stone-300 p-0.5 gap-0.5">
+      <div className="flex h-3.5 rounded-lg overflow-hidden bg-slate-200 border border-slate-300 p-0.5 gap-0.5">
         {data.map((d, i) => (
           <div
             key={i}
@@ -94,7 +94,7 @@ export function MultiBar({ data, series, height = 130, valueFormatter }: {
           </div>
         ))}
       </div>
-      <div className="flex gap-4 mt-3 flex-wrap pt-2 border-t border-stone-200">
+      <div className="flex gap-4 mt-3 flex-wrap pt-2 border-t border-slate-200">
         {series.map((s, i) => (
           <div key={i} className="flex items-center gap-1.5">
             <span className="h-2 w-2 rounded-sm" style={{ backgroundColor: s.color }} />
@@ -123,7 +123,7 @@ export function Donut({ data, size = 140, thickness = 16, centerLabel, centerVal
     <div className="flex items-center gap-6">
       <div className="relative" style={{ width: size, height: size }}>
         <svg width={size} height={size} className="-rotate-90">
-          <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="#e7e5e4" strokeWidth={thickness} />
+          <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="#e2e8f0" strokeWidth={thickness} />
           {data.map((d, i) => {
             const frac = (d.value || 0) / total
             const seg = (
@@ -167,7 +167,7 @@ export function HBar({ data }: { data: { label: string; value: number; sub?: str
             <span className="text-[12px] text-slate-700 font-medium">{d.label}</span>
             {d.sub && <span className="text-[11px] font-mono text-slate-500">{d.sub}</span>}
           </div>
-          <div className="risk-bar-track bg-stone-200 border border-stone-200">
+          <div className="risk-bar-track bg-slate-200 border border-slate-200">
             <div
               className={`risk-bar-fill ${d.color || 'bg-indigo-500'}`}
               style={{ width: `${((d.value || 0) / max) * 100}%` }}
@@ -192,19 +192,19 @@ export function Heatmap({ rows, columns, data }: {
     return 'bg-rose-50 text-rose-700 border-rose-200'
   }
   return (
-    <div className="overflow-x-auto rounded-lg border border-stone-200">
+    <div className="overflow-x-auto rounded-lg border border-slate-200">
       <table className="w-full border-collapse bg-white">
         <thead>
-          <tr className="bg-stone-50">
-            <th className="text-left text-[10.5px] font-semibold uppercase tracking-wider text-slate-500 px-4 py-3 border-b border-stone-200 font-mono">Infrastructure Telemetry</th>
+          <tr className="bg-slate-50">
+            <th className="text-left text-[10.5px] font-semibold uppercase tracking-wider text-slate-500 px-4 py-3 border-b border-slate-200 font-mono">Infrastructure Telemetry</th>
             {columns.map((c, i) => (
-              <th key={i} className="text-center text-[10.5px] font-semibold uppercase tracking-wider text-slate-500 px-3 py-3 border-b border-stone-200 whitespace-nowrap font-mono">{c}</th>
+              <th key={i} className="text-center text-[10.5px] font-semibold uppercase tracking-wider text-slate-500 px-3 py-3 border-b border-slate-200 whitespace-nowrap font-mono">{c}</th>
             ))}
           </tr>
         </thead>
         <tbody>
           {rows.map((row, i) => (
-            <tr key={i} className="border-b border-stone-200 hover:bg-stone-50 transition-colors">
+            <tr key={i} className="border-b border-slate-200 hover:bg-slate-50 transition-colors">
               <td className="px-4 py-2.5 text-[12px] font-medium text-slate-700 whitespace-nowrap font-mono">{row}</td>
               {(data[i] || []).map((v, j) => (
                 <td key={j} className="px-2 py-2 text-center">
@@ -244,7 +244,7 @@ export function AreaChart({ data, series, height = 160, valueFormatter }: {
       <svg width="100%" viewBox={`0 0 ${w} ${h}`} className="max-w-full" style={{ minWidth: 400 }}>
         {[0.25, 0.5, 0.75, 1].map((f, i) => (
           <g key={i}>
-            <line x1={pad.left} x2={w - pad.right} y1={pad.top + innerH * (1 - f)} y2={pad.top + innerH * (1 - f)} stroke="#e7e5e4" strokeWidth="1" strokeDasharray="3 3" />
+            <line x1={pad.left} x2={w - pad.right} y1={pad.top + innerH * (1 - f)} y2={pad.top + innerH * (1 - f)} stroke="#e2e8f0" strokeWidth="1" strokeDasharray="3 3" />
             <text x={pad.left - 6} y={pad.top + innerH * (1 - f) + 3} textAnchor="end" fontSize="9" fill="#64748b" className="font-mono">{Math.round(max * f).toLocaleString()}</text>
           </g>
         ))}
@@ -263,7 +263,7 @@ export function AreaChart({ data, series, height = 160, valueFormatter }: {
           <text key={i} x={x(i)} y={h - 6} textAnchor="middle" fontSize="9" fill="#64748b" className="font-mono">{d.label}</text>
         ))}
       </svg>
-      <div className="flex gap-4 mt-2 flex-wrap pt-2 border-t border-stone-200">
+      <div className="flex gap-4 mt-2 flex-wrap pt-2 border-t border-slate-200">
         {series.map((s, i) => (
           <div key={i} className="flex items-center gap-1.5">
             <span className="h-2 w-2 rounded-sm" style={{ backgroundColor: s.color }} />
@@ -293,11 +293,11 @@ export function Radar({ data, max = 100, size = 220 }: {
     <svg width={size} height={size} className="mx-auto overflow-visible">
       {[0.25, 0.5, 0.75, 1].map((f, i) => {
         const pts = data.map((_, j) => point(j, max * f).join(',')).join(' ')
-        return <polygon key={i} points={pts} fill="none" stroke="#e7e5e4" strokeWidth="1" strokeDasharray="3 3" />
+        return <polygon key={i} points={pts} fill="none" stroke="#e2e8f0" strokeWidth="1" strokeDasharray="3 3" />
       })}
       {data.map((_, i) => {
         const [px, py] = point(i, max)
-        return <line key={i} x1={cx} y1={cy} x2={px} y2={py} stroke="#e7e5e4" strokeWidth="1" />
+        return <line key={i} x1={cx} y1={cy} x2={px} y2={py} stroke="#e2e8f0" strokeWidth="1" />
       })}
       <polygon points={poly} fill="#6366f1" opacity="0.15" stroke="#4f46e5" strokeWidth="2.2" style={{ filter: 'none' }} />
       {data.map((d, i) => {
@@ -324,7 +324,7 @@ export function ScoreBars({ data }: { data: { label: string; value: number }[] }
       {data.map((d, i) => (
         <div key={i} className="flex items-center gap-3">
           <span className="w-28 text-[12px] text-slate-600 font-medium font-mono">{d.label}</span>
-          <div className="risk-bar-track flex-1 bg-stone-200 border border-stone-200">
+          <div className="risk-bar-track flex-1 bg-slate-200 border border-slate-200">
             <div className="risk-bar-fill" style={{ width: `${d.value ?? 0}%`, backgroundColor: color(d.value ?? 0), boxShadow: 'none' }} />
           </div>
           <span className="w-8 text-right font-mono text-[12px] font-bold text-slate-900">{d.value ?? 0}</span>

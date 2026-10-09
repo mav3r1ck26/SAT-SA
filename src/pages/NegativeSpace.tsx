@@ -85,7 +85,7 @@ export default function NegativeSpace() {
 
   return (
     <div className="p-6 max-w-[1700px] mx-auto space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-stone-200 pb-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200 pb-4">
         <div>
           <div className="flex items-center gap-3">
             <h1 className="page-title text-xl font-bold tracking-tight text-slate-900">Negative Space & Telemetry Blind Spots</h1>
@@ -114,7 +114,7 @@ export default function NegativeSpace() {
 
       {/* Coverage Matrix */}
       <div className="card">
-        <div className="card-header border-b border-stone-200 pb-3 flex flex-wrap items-center justify-between gap-3">
+        <div className="card-header border-b border-slate-200 pb-3 flex flex-wrap items-center justify-between gap-3">
           <div>
             <div className="card-title text-sm font-semibold flex items-center gap-2 text-slate-800">
               <Radio className="w-4 h-4 text-indigo-600" />
@@ -124,7 +124,7 @@ export default function NegativeSpace() {
               Ratio of observed vs expected event telemetry across critical infrastructure architecture tiers
             </div>
           </div>
-          <span className="badge text-[10.5px] font-mono bg-slate-800 text-slate-600 border-stone-300">
+          <span className="badge text-[10.5px] font-mono bg-slate-100 text-slate-600 border-slate-300">
             10x5 SENSOR AUDIT TENSOR
           </span>
         </div>
@@ -135,7 +135,7 @@ export default function NegativeSpace() {
 
       {/* Detected Blind Spots Table */}
       <div className="card">
-        <div className="card-header border-b border-stone-200 pb-3 flex flex-wrap items-center justify-between gap-3">
+        <div className="card-header border-b border-slate-200 pb-3 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <EyeOff className="w-4 h-4 text-rose-600" />
             <div>
@@ -151,7 +151,7 @@ export default function NegativeSpace() {
               <select
                 value={selectedEntity}
                 onChange={e => setEntityFilter(e.target.value)}
-                className="select bg-stone-50 border-stone-300 text-indigo-600 text-xs py-1"
+                className="select bg-slate-50 border-slate-300 text-indigo-600 text-xs py-1"
               >
                 <option value="ALL">All Entities ({blindSpots.length})</option>
                 {entities.map(e => (
@@ -166,7 +166,7 @@ export default function NegativeSpace() {
               <select
                 value={selectedSeverity}
                 onChange={e => setSeverityFilter(e.target.value)}
-                className="select bg-stone-50 border-stone-300 text-indigo-600 text-xs py-1"
+                className="select bg-slate-50 border-slate-300 text-indigo-600 text-xs py-1"
               >
                 <option value="ALL">All Severities</option>
                 <option value="Critical">Critical</option>
@@ -184,7 +184,7 @@ export default function NegativeSpace() {
             const sevColor = sev === 'Critical' ? 'text-rose-600 border-rose-200 bg-rose-50' : 'text-amber-600 border-amber-200 bg-amber-50'
             const obsPct = bs.observedPct ?? bs.observed ?? 0
             return (
-              <div key={i} className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-stone-50 transition-colors">
+              <div key={i} className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-slate-50 transition-colors">
                 <div className="flex items-start gap-3 min-w-0">
                   <AlertTriangle className="w-4 h-4 text-rose-600 mt-0.5 shrink-0" />
                   <div className="space-y-1.5">
@@ -206,7 +206,7 @@ export default function NegativeSpace() {
                   </div>
                 </div>
 
-                <div className="text-right shrink-0 bg-white px-4 py-2 rounded-lg border border-stone-200 min-w-[120px]">
+                <div className="text-right shrink-0 bg-white px-4 py-2 rounded-lg border border-slate-200 min-w-[120px]">
                   <div className={`font-mono text-lg font-bold leading-none ${obsPct < 50 ? 'text-rose-600' : 'text-amber-600'}`}>
                     {obsPct}%
                   </div>

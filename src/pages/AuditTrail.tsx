@@ -38,29 +38,29 @@ export default function AuditTrail() {
 
   return (
     <div className="p-6 max-w-[1700px] mx-auto space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-cyber-800 pb-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200 pb-4">
         <div>
           <div className="flex items-center gap-3">
             <h1 className="page-title text-2xl font-bold tracking-tight">Supervisory Immutable Audit Ledger</h1>
             <TelemetryPulse active status="online" label="SHA-256 APPEND-ONLY LOG" />
           </div>
-          <p className="page-subtitle text-cyber-400 mt-0.5">
+          <p className="page-subtitle text-slate-500 mt-0.5">
             Tamper-evident chronological journal of all examiner adjudications, data ingestion runs, and regulatory exports
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <button className="btn btn-sm flex items-center gap-1.5 text-cyber-300" onClick={handleExport}>
-            <Download className="w-3.5 h-3.5 text-neonCyan" /> Export Audit Trail (CSV)
+          <button className="btn btn-sm flex items-center gap-1.5 text-slate-600" onClick={handleExport}>
+            <Download className="w-3.5 h-3.5 text-indigo-600" /> Export Audit Trail (CSV)
           </button>
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center justify-between gap-3 bg-cyber-900/60 p-3 rounded-lg border border-cyber-800">
+      <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-100/60 p-3 rounded-lg border border-slate-200">
         <div className="flex flex-wrap items-center gap-3 flex-1">
           <div className="relative min-w-[280px]">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-cyber-400" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
             <input 
-              className="input pl-9 w-full bg-cyber-950 text-cyber-100 placeholder-cyber-500 border-cyber-700/80 focus:border-neonCyan text-xs" 
+              className="input pl-9 w-full bg-slate-50 text-slate-800 placeholder-slate-500 border-slate-300/80 focus:border-indigo-500 text-xs" 
               placeholder="Search by examiner ID, action, CSE ID, or finding hash..." 
               value={search} 
               onChange={e => setSearch(e.target.value)} 
@@ -68,9 +68,9 @@ export default function AuditTrail() {
           </div>
           
           <div className="flex items-center gap-1.5">
-            <Filter className="w-3.5 h-3.5 text-cyber-400 mr-0.5" />
+            <Filter className="w-3.5 h-3.5 text-slate-500 mr-0.5" />
             <select 
-              className="select bg-cyber-950 border-cyber-700/80 text-cyber-200 text-xs py-1.5" 
+              className="select bg-slate-50 border-slate-300/80 text-slate-700 text-xs py-1.5" 
               value={userFilter} 
               onChange={e => setUserFilter(e.target.value)}
             >
@@ -84,7 +84,7 @@ export default function AuditTrail() {
 
           <div>
             <select 
-              className="select bg-cyber-950 border-cyber-700/80 text-cyber-200 text-xs py-1.5" 
+              className="select bg-slate-50 border-slate-300/80 text-slate-700 text-xs py-1.5" 
               value={actionFilter} 
               onChange={e => setActionFilter(e.target.value)}
             >
@@ -96,8 +96,8 @@ export default function AuditTrail() {
           </div>
         </div>
 
-        <div className="text-xs font-mono text-cyber-400 flex items-center gap-2">
-          <span>Showing <strong className="text-neonCyan">{filtered.length}</strong> logged transactions</span>
+        <div className="text-xs font-mono text-slate-500 flex items-center gap-2">
+          <span>Showing <strong className="text-indigo-600">{filtered.length}</strong> logged transactions</span>
         </div>
       </div>
 
@@ -116,28 +116,28 @@ export default function AuditTrail() {
             </thead>
             <tbody>
               {filtered.map((r, i) => (
-                <tr key={i} className="hover:bg-cyber-800/40 transition-colors">
-                  <td className="mono-id text-cyber-300">
+                <tr key={i} className="hover:bg-slate-200/40 transition-colors">
+                  <td className="mono-id text-slate-600">
                     {typeof r.timestamp === 'string' ? r.timestamp.slice(0, 19).replace('T', ' ') : r.timestamp}
                   </td>
-                  <td className="text-xs font-bold text-cyber-100 flex items-center gap-1.5">
-                    <Shield className="w-3.5 h-3.5 text-cyber-500" />
+                  <td className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                    <Shield className="w-3.5 h-3.5 text-slate-500" />
                     {r.user}
                   </td>
-                  <td className="text-xs font-mono text-cyber-200">{r.action}</td>
-                  <td className="mono-id text-neonCyan">{r.finding || '—'}</td>
-                  <td className="mono-id text-cyber-300">{r.entityId || '—'}</td>
+                  <td className="text-xs font-mono text-slate-700">{r.action}</td>
+                  <td className="mono-id text-indigo-600">{r.finding || '—'}</td>
+                  <td className="mono-id text-slate-600">{r.entityId || '—'}</td>
                   <td>
                     <span className={`badge border text-[10.5px] font-mono ${
                       r.status === 'Confirmed' || r.status === 'Complete'
-                        ? 'bg-emerald-950/80 text-neonEmerald border-emerald-800/60' 
+                        ? 'bg-emerald-50/80 text-emerald-700 border-emerald-200/60' 
                         : r.status === 'In Progress' 
-                        ? 'bg-blue-950/80 text-neonCyan border-cyan-800/60' 
+                        ? 'bg-blue-50/80 text-indigo-600 border-cyan-200/60' 
                         : r.status === 'Warning' 
-                        ? 'bg-amber-950/80 text-neonAmber border-amber-800/60' 
+                        ? 'bg-amber-50/80 text-amber-700 border-amber-200/60' 
                         : r.status === 'Dismissed' 
-                        ? 'bg-cyber-900 text-cyber-500 border-cyber-700 line-through' 
-                        : 'bg-cyber-900 text-cyber-300 border-cyber-700'
+                        ? 'bg-slate-100 text-slate-500 border-slate-300 line-through' 
+                        : 'bg-slate-100 text-slate-600 border-slate-300'
                     }`}>
                       {r.status}
                     </span>

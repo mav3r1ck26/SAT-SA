@@ -17,6 +17,7 @@ import DataIngestion from './pages/DataIngestion'
 import Validation from './pages/Validation'
 import AuditTrail from './pages/AuditTrail'
 import Settings from './pages/Settings'
+import Anomalies from './pages/Anomalies'
 
 function PageRouter() {
   const { currentPage } = useApp()
@@ -31,6 +32,7 @@ function PageRouter() {
     'alerts': AlertAnalytics,
     'investigation': InvestigationAnalytics,
     'escalation': EscalationAnalytics,
+    'anomalies': Anomalies,
     'benchmarking': PeerBenchmarking,
     'prioritisation': ReviewPrioritisation,
     'evidence': EvidenceExplorer,

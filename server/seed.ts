@@ -12,6 +12,8 @@ import { Notification } from './models/Notification'
 import { Report } from './models/Report'
 import { IngestionBatch } from './models/IngestionBatch'
 import { Configuration } from './models/Configuration'
+import { linkFindingsToSampleEvidence } from './services/sampleEvidence'
+import { seedSampleReviewFindings } from './services/sampleReviewData'
 
 type Criticality = 'Critical' | 'High' | 'Medium' | 'Low'
 type Priority = 'Critical' | 'High' | 'Moderate' | 'Normal' | 'Low'
@@ -234,6 +236,9 @@ async function seed() {
       })
     }
   }
+
+  await seedSampleReviewFindings()
+  await linkFindingsToSampleEvidence()
 
   // ---- Notifications ----
   const notifDefs = [

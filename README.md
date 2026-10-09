@@ -49,7 +49,7 @@ SAT-SA is a **supervisory analytics platform** that evaluates SOC operational ef
 
 | Layer | Technologies |
 |-------|--------------|
-| **Frontend** | React 18, TypeScript, Vite 6, Tailwind CSS 3, Lucide React |
+| **Frontend** | React 18, TypeScript, Vite 6, Tailwind CSS 3, Lucide React (`src/`) |
 | **API Backend** | Node.js 20+, Express 5, TypeScript, Mongoose 9 |
 | **Database** | MongoDB 7 (Docker) |
 | **Analytics/ML** | Python 3.11+, FastAPI, pandas, NumPy, scikit-learn, joblib |
@@ -61,7 +61,7 @@ SAT-SA is a **supervisory analytics platform** that evaluates SOC operational ef
 ## Quick Start
 
 ### Prerequisites
-- Node.js 20+
+- Node.js 20.19+ or 22.12+
 - Python 3.11+
 - Docker & Docker Compose
 - Git
@@ -99,26 +99,24 @@ cd ..
 
 ### 4. Start Development Servers
 ```bash
-# Terminal 1: Node API (port 3001)
-npm run api:watch
+# Start the Node API (port 3500) and React frontend (port 5173)
+npm run dev:full
 
-# Terminal 2: Python ML API (port 8000)
-cd ml-backend && python -m src.api
-
-# Terminal 3: React Frontend (port 5173)
-npm run dev
+# Optional: start the Python ML API in a separate terminal (port 8000)
+cd ml-backend
+python -m src.api
 ```
 
 ### 5. Access Application
 - **Frontend**: http://localhost:5173
-- **Node API**: http://localhost:3001/api/health
+- **Node API**: http://localhost:3500/api/health
 - **ML API**: http://localhost:8000/health
 
 ---
 
 ## API Reference
 
-### Node/Express API (Port 3001)
+### Node/Express API (Port 3500)
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
@@ -144,6 +142,8 @@ npm run dev
 | `/api/reports/:id/generate` | POST | Generate report |
 | `/api/audit` | GET | Audit trail |
 | `/api/validation/summary` | GET | Validation metrics |
+| `/api/configuration/category/:category` | GET | Configuration values by category |
+| `/api/configuration/:key` | GET, PUT | Read or update a configuration value |
 | `/api/ml/*` | * | ML proxy endpoints |
 
 ### Python/FastAPI ML API (Port 8000)
@@ -321,32 +321,8 @@ All thresholds and weights externalized in MongoDB `Configuration` collection:
 | **Auditor** | Read-only: audit log, reports, validation metrics |
 | **Viewer** | Read-only: dashboards, entity overview |
 
-### Docker Deployment
-```yaml
-services:
-  mongodb:
-    image: mongo:7
-    volumes: [mongo_data:/data/db]
-    ports: ["27017:27017"]
-
-  api:
-    build: .
-    ports: ["3001:3001"]
-    environment:
-      - MONGODB_URI=mongodb://mongodb:27017/satsa
-      - ML_API_URL=http://ml:8000
-    depends_on: [mongodb, ml]
-
-  ml:
-    build: ./ml-backend
-    ports: ["8000:8000"]
-    volumes: [./ml-backend/models:/ml_models]
-
-  frontend:
-    build: ./frontend
-    ports: ["80:80"]
-    depends_on: [api]
-```
+### Docker Development
+The checked-in Compose file starts MongoDB. Run `docker compose up -d mongodb`, then start the API and frontend with `npm run dev:full`.
 
 ---
 
@@ -363,7 +339,7 @@ SAT-SA/
 ├── docker-compose.yml                 # MongoDB Docker
 ├── .gitignore
 │
-├── src/                               # React Frontend
+├── src/                               # Primary frontend (refined supervisory interface)
 │   ├── main.tsx                       # App entry point
 │   ├── App.tsx                        # Root component with routing
 │   ├── index.css                      # Global styles + Tailwind
@@ -371,7 +347,7 @@ SAT-SA/
 │   ├── context/AppContext.tsx         # Global state (entity, period, nav)
 │   ├── components/                    # Reusable UI components
 │   ├── pages/                         # 17 page components
-│   └── data/mockData.ts               # Fallback mock data
+│   └── data/mockData.ts               # UI fallback data
 │
 ├── server/                            # Node.js/Express Backend
 │   ├── index.ts                       # Express app entry point
@@ -384,6 +360,11 @@ SAT-SA/
 │   │   ├── configuration.ts           # Dynamic configuration system
 │   │   └── reports.ts                 # Report generation + CSV export
 │   └── seed.ts                        # Comprehensive seed data generator
+│
+├── sat-sa-frontend/                   # Alternate frontend retained for reference
+│   ├── package.json                   # Frontend dependencies and scripts
+│   ├── vite.config.ts                 # Dev server (5173) → API proxy (3500)
+│   └── src/                           # Alternate routed pages and shared UI
 │
 └── ml-backend/                        # Python/FastAPI ML Service
     ├── requirements.txt
@@ -409,15 +390,17 @@ SAT-SA/
 ## Scripts
 
 ```bash
-# Frontend
-npm run dev          # Start Vite dev server
-npm run build        # Type-check + production build
-npm run preview      # Preview production build
+# Primary frontend (`src/`)
+npm run dev          # Start Vite on port 5173
+npm run build        # Type-check and build the primary frontend
+npm run preview      # Preview the primary frontend build
 
 # Node API
 npm run api          # Start Express server
 npm run api:watch    # Start with tsx watch (auto-reload)
+npm run dev:full     # Start the Node API and primary frontend together
 npm run seed         # Seed MongoDB with synthetic data
+npm run seed:evidence # Link sample findings to their evidence records (safe to rerun)
 
 # Python ML
 cd ml-backend

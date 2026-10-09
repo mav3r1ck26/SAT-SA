@@ -1,15 +1,13 @@
-import { NavLink, useLocation } from 'react-router-dom';
+import { NavLink } from 'react-router-dom';
 import { 
   LayoutDashboard, 
   Building2, 
-  UserCog, 
   AlertTriangle, 
   Eye, 
   AlertCircle, 
   Search, 
   Zap, 
   BarChart2, 
-  GitCompare, 
   ClipboardList, 
   FolderSearch, 
   FileText, 
@@ -18,9 +16,8 @@ import {
   History, 
   Settings,
   Shield,
-  FileQuestion,
+  X,
 } from 'lucide-react';
-import { NavLink as NavLinkType } from 'react-router-dom';
 import { cn } from '../../lib/utils';
 
 const navigation = [
@@ -130,15 +127,14 @@ const SECTIONS = [
   { title: 'ADMIN', items: ['settings'] },
 ];
 
-function getSection(href: string) {
-  return SECTIONS.find(s => s.items.some(i => href === `/${i}` || (href === '/' && i === 'overview')))?.title || '';
-}
-
-export function Sidebar() {
-  const location = useLocation();
-  
+export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
   return (
-    <aside className="fixed lg:static inset-y-0 left-0 z-50 w-64 bg-white border-r border-slate-200 flex flex-col overflow-y-auto">
+    <>
+      {open && <button className="fixed inset-0 z-40 bg-slate-950/30 lg:hidden" aria-label="Close navigation" onClick={onClose} />}
+      <aside className={cn(
+        'fixed inset-y-0 left-0 z-50 w-64 bg-white border-r border-slate-200 flex flex-col overflow-y-auto transition-transform lg:translate-x-0',
+        open ? 'translate-x-0' : '-translate-x-full'
+      )}>
       <div className="p-4 border-b border-slate-200 flex items-center gap-3">
         <div className="w-8 h-8 rounded-lg bg-navy-900 flex items-center justify-center">
           <Shield className="w-5 h-5 text-white" />
@@ -147,24 +143,27 @@ export function Sidebar() {
           <div className="text-[13px] font-bold text-navy-950">SAT-SA</div>
           <div className="text-[10.5px] text-slate-400">Supervisory Analytics</div>
         </div>
+        <button className="ml-auto rounded p-1 text-slate-500 hover:bg-slate-100 lg:hidden" aria-label="Close navigation" onClick={onClose}>
+          <X className="h-4 w-4" />
+        </button>
       </div>
       
       <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
-        {SECTIONS.map((section, sectionIndex) => (
+        {SECTIONS.map(section => (
           <div key={section.title}>
             <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
               {section.title}
             </div>
             <div className="space-y-0.5">
-              {section.items.map((item, itemIndex) => {
+              {section.items.map(item => {
                 const href = item === 'overview' ? '/' : `/${item}`;
-                const isActive = location.pathname === href || (item === 'overview' && location.pathname === '/');
                 const Icon = navigation.find(n => n.href === href)?.icon;
                 
                 return (
                   <NavLink
                     key={item}
                     to={href}
+                    onClick={onClose}
                     className={({ isActive }) => cn(
                       'flex items-center gap-3 px-3 py-2 rounded-md text-[12px] font-medium transition-colors',
                       isActive
@@ -189,6 +188,7 @@ export function Sidebar() {
           SAT-SA v2.0.0 | Offline Mode
         </div>
       </div>
-    </aside>
+      </aside>
+    </>
   );
 }

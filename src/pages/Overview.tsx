@@ -118,7 +118,7 @@ export default function Overview() {
   return (
     <div className="p-6 max-w-[1700px] mx-auto space-y-6">
       {/* Top Banner & Context Controls */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-stone-200 pb-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200 pb-4">
         <div>
           <div className="flex items-center gap-3">
             <h1 className="page-title text-xl font-bold tracking-tight text-slate-900">Overview</h1>
@@ -155,7 +155,7 @@ export default function Overview() {
           <button
             key={c}
             onClick={() => setActiveFilter(c)}
-            className={`px-3 py-1.5 rounded-full text-xs transition-colors ${activeFilter === c ? 'bg-slate-800 text-slate-900' : 'text-slate-400 hover:text-slate-700'}`}
+            className={`px-3 py-1.5 rounded-full text-xs transition-colors ${activeFilter === c ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-slate-700'}`}
           >
             {c}
           </button>
@@ -180,7 +180,7 @@ export default function Overview() {
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
         {/* Risk Distribution & Concerns */}
         <div className="lg:col-span-8 card">
-          <div className="card-header border-b border-stone-200 pb-3 flex items-center justify-between">
+          <div className="card-header border-b border-slate-200 pb-3 flex items-center justify-between">
             <div>
               <div className="card-title text-sm font-semibold flex items-center gap-2 text-slate-800">
                 <Shield className="w-4 h-4 text-indigo-600" />
@@ -190,7 +190,7 @@ export default function Overview() {
                 Cross-sectional distribution of behavioral divergences computed from raw SOC telemetry events
               </div>
             </div>
-            <span className="badge text-[10.5px] font-mono bg-slate-800 text-slate-600 border-stone-300">
+            <span className="badge text-[10.5px] font-mono bg-slate-100 text-slate-600 border-slate-300">
               NCIIPC EXAM RULE
             </span>
           </div>
@@ -216,7 +216,7 @@ export default function Overview() {
                   <div 
                     key={idx}
                     onClick={() => setCurrentPage('gaps')}
-                    className="p-3 rounded-lg bg-stone-50 border border-stone-200 hover:border-stone-300 transition-colors flex items-center justify-between gap-3 cursor-pointer"
+                    className="p-3 rounded-lg bg-slate-50 border border-slate-200 hover:border-slate-300 transition-colors flex items-center justify-between gap-3 cursor-pointer"
                   >
                     <div className="flex items-center gap-2.5 truncate">
                       <span className="text-xs font-medium text-slate-700 truncate">{tc.title}</span>
@@ -235,7 +235,7 @@ export default function Overview() {
 
         {/* Donut Summary Breakdown */}
         <div className="lg:col-span-4 card flex flex-col">
-          <div className="card-header border-b border-stone-200 pb-3">
+          <div className="card-header border-b border-slate-200 pb-3">
             <div className="card-title text-sm font-semibold text-slate-800">Supervisory Attention Ratio</div>
             <div className="card-subtitle text-xs text-slate-400">Distribution by supervisory priority level</div>
           </div>
@@ -258,7 +258,7 @@ export default function Overview() {
 
       {/* Critical Sector Entities Table */}
       <div className="card">
-        <div className="card-header border-b border-stone-200 pb-3 flex items-center justify-between">
+        <div className="card-header border-b border-slate-200 pb-3 flex items-center justify-between">
           <div>
             <div className="card-title text-sm font-semibold flex items-center gap-2 text-slate-800">
               <Activity className="w-4 h-4 text-rose-600" />
@@ -278,7 +278,7 @@ export default function Overview() {
 
         <div className="table-wrap">
           <table className="data-table">
-            <thead className="bg-stone-50">
+            <thead className="bg-slate-50">
               <tr>
                 <th>Entity Identifier</th>
                 <th>Critical Sector</th>
@@ -298,7 +298,7 @@ export default function Overview() {
                   return (
                     <tr 
                       key={e.id} 
-                      className="cursor-pointer hover:bg-stone-50 transition-colors"
+                      className="cursor-pointer hover:bg-slate-50 transition-colors"
                       onClick={() => openEntity(e.id)}
                     >
                       <td className="font-mono text-indigo-600 font-bold">
@@ -309,7 +309,7 @@ export default function Overview() {
                         </div>
                       </td>
                       <td className="text-slate-600">
-                        <span className="px-2 py-0.5 rounded text-[11px] font-mono bg-stone-50 border border-stone-200 text-slate-600">
+                        <span className="px-2 py-0.5 rounded text-[11px] font-mono bg-slate-50 border border-slate-200 text-slate-600">
                           {e.sector}
                         </span>
                       </td>

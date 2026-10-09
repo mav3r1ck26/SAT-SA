@@ -118,6 +118,7 @@ export default function Reports() {
   const handleExport = async (reportItem: any, format: string) => {
     const exportKey = `${reportItem.id}-${format}`
     setExporting(exportKey)
+    const printWindow = format === 'PDF' ? window.open('', '_blank', 'width=900,height=800') : null
     try {
       let content = await getReportPayload(reportItem.id, reportItem)
 
@@ -126,6 +127,10 @@ export default function Reports() {
         content = genRes?.data || genRes
         await loadReports()
       }
+
+      // Generate endpoint returns a report envelope, while the list endpoint
+      // stores the report body under `content`. Normalize both shapes.
+      content = content?.content || content?.data || content
 
       const filename = `SAT-SA_${reportItem.id}_${new Date().toISOString().slice(0, 10)}`
 
@@ -153,22 +158,20 @@ export default function Reports() {
 
         downloadCSV(filename, headers, rows)
       } else if (format === 'PDF') {
+        const prettyHeading = (key: string) => key
+          .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+          .replace(/[_-]+/g, ' ')
+          .replace(/^./, value => value.toUpperCase())
         const sections: { heading: string; content: any }[] = [
-          { heading: 'Report Information', content: { ReportID: reportItem.id, Title: reportItem.name, Description: reportItem.description, GeneratedAt: reportItem.generatedAt || new Date().toISOString() } }
+          { heading: 'Report Information', content: { ReportID: reportItem.id, Title: reportItem.name, Description: reportItem.description, GeneratedAt: reportItem.generatedAt || new Date().toISOString() } },
+          ...Object.entries(content || {}).map(([key, value]) => ({ heading: prettyHeading(key), content: value }))
         ]
 
-        if (content.entity) sections.push({ heading: 'Entity Profile', content: content.entity })
-        if (content.scoreBreakdown) sections.push({ heading: 'Cyber Resilience & Operational Scores', content: content.scoreBreakdown })
-        if (content.operationalVolume) sections.push({ heading: 'Operational Volume Ingested', content: content.operationalVolume })
-        if (content.findings) sections.push({ heading: 'Forensic Findings & Execution Gaps', content: content.findings })
-        if (content.benchmark) sections.push({ heading: 'Peer Benchmark Comparison', content: content.benchmark })
-        if (content.coverageMatrix) sections.push({ heading: 'Negative Space Coverage Matrix', content: content.coverageMatrix })
-        if (content.summary) sections.push({ heading: 'Executive Summary', content: content.summary })
-
-        printDossier(reportItem.name, sections)
+        printDossier(reportItem.name, sections, printWindow)
       }
     } catch (err) {
       console.error('Export error:', err)
+      printWindow?.close()
     }
     setExporting(null)
   }
@@ -206,7 +209,7 @@ export default function Reports() {
   return (
     <div className="p-6 max-w-[1700px] mx-auto space-y-6">
       {/* Module Title Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-stone-200 pb-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200 pb-4">
         <div>
           <div className="flex items-center gap-3">
             <h1 className="page-title text-xl font-bold tracking-tight text-slate-900">Supervisory Reports & Governance</h1>
@@ -239,7 +242,7 @@ export default function Reports() {
       </div>
 
       {/* Tabs Selector */}
-      <div className="flex gap-2 border-b border-stone-200 pb-1">
+      <div className="flex gap-2 border-b border-slate-200 pb-1">
         {[
           { id: 'dossiers', label: 'Supervisory Dossiers & Reports', icon: FileText, count: displayReports.length },
           { id: 'audit', label: 'Immutable Audit Ledger', icon: History, count: auditRecords.length },
@@ -253,14 +256,14 @@ export default function Reports() {
               onClick={() => setActiveTab(tab.id as any)}
               className={`flex items-center gap-2 px-4 py-2 rounded-t-lg text-xs font-mono font-semibold transition-colors border-b-2 ${
                 active 
-                  ? 'border-indigo-600 text-slate-900 bg-stone-50 shadow-sm' 
-                  : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-stone-50'
+                  ? 'border-indigo-600 text-slate-900 bg-slate-50 shadow-sm' 
+                  : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50'
               }`}
             >
               <Icon className={`w-3.5 h-3.5 ${active ? 'text-indigo-600' : 'text-slate-400'}`} />
               <span>{tab.label}</span>
               {tab.count !== undefined && (
-                <span className={`text-[10px] px-1.5 py-0.2 rounded font-mono ${active ? 'bg-indigo-50 text-indigo-600 border border-indigo-200' : 'bg-stone-100 text-slate-500'}`}>
+                <span className={`text-[10px] px-1.5 py-0.2 rounded font-mono ${active ? 'bg-indigo-50 text-indigo-600 border border-indigo-200' : 'bg-slate-100 text-slate-500'}`}>
                   {tab.count}
                 </span>
               )}
@@ -273,10 +276,10 @@ export default function Reports() {
       {activeTab === 'dossiers' && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
           {displayReports.map(r => (
-            <div key={r.id} className="card p-5 border-stone-200 hover:border-stone-300 transition-all flex flex-col justify-between">
+            <div key={r.id} className="card p-5 border-slate-200 hover:border-slate-300 transition-all flex flex-col justify-between">
               <div className="space-y-3">
                 <div className="flex items-start gap-3.5">
-                  <div className="w-10 h-10 rounded-lg bg-white border border-stone-300 flex items-center justify-center shrink-0 text-indigo-600">
+                  <div className="w-10 h-10 rounded-lg bg-white border border-slate-300 flex items-center justify-center shrink-0 text-indigo-600">
                     <FileText className="w-5 h-5" />
                   </div>
                   
@@ -288,7 +291,7 @@ export default function Reports() {
                           ? 'bg-emerald-50 text-emerald-600 border-emerald-200' 
                           : r.status === 'Generating' 
                           ? 'bg-indigo-50 text-indigo-600 border-indigo-200' 
-                          : 'bg-white text-slate-500 border-stone-300'
+                          : 'bg-white text-slate-500 border-slate-300'
                       }`}>
                         {r.status === 'Available' && <CheckCircle2 className="w-3 h-3 mr-1 inline" />}
                         {r.status === 'Generating' && <Loader2 className="w-3 h-3 mr-1 inline animate-spin" />}
@@ -301,13 +304,13 @@ export default function Reports() {
                   </div>
                 </div>
 
-                <div className="flex items-center gap-3 text-xs font-mono text-slate-500 bg-stone-50 px-3 py-2 rounded-md border border-stone-200">
+                <div className="flex items-center gap-3 text-xs font-mono text-slate-500 bg-slate-50 px-3 py-2 rounded-md border border-slate-200">
                   <Clock className="w-3.5 h-3.5 text-slate-400" />
                   <span>Generated: <strong className="text-slate-700">{r.generatedAt || 'Pending generation'}</strong></span>
                 </div>
               </div>
 
-              <div className="flex flex-wrap items-center justify-between gap-2 mt-4 pt-3.5 border-t border-stone-200">
+              <div className="flex flex-wrap items-center justify-between gap-2 mt-4 pt-3.5 border-t border-slate-200">
                 <button 
                   className="btn btn-primary btn-sm flex items-center gap-1.5 text-xs font-mono" 
                   disabled={generating === r.id} 
@@ -350,12 +353,12 @@ export default function Reports() {
       {/* Tab 2: Immutable Supervisory Audit Ledger */}
       {activeTab === 'audit' && (
         <div className="space-y-4">
-          <div className="flex flex-wrap items-center justify-between gap-3 bg-stone-50 p-3 rounded-lg border border-stone-200">
+          <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-50 p-3 rounded-lg border border-slate-200">
             <div className="flex flex-wrap items-center gap-3 flex-1">
               <div className="relative min-w-[260px]">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                 <input 
-                  className="input pl-9 w-full bg-white text-slate-800 placeholder-slate-400 border-stone-300 text-xs font-mono" 
+                  className="input pl-9 w-full bg-white text-slate-800 placeholder-slate-400 border-slate-300 text-xs font-mono" 
                   placeholder="Filter by examiner, action, or finding ref..." 
                   value={auditSearch} 
                   onChange={e => setAuditSearch(e.target.value)} 
@@ -363,7 +366,7 @@ export default function Reports() {
               </div>
 
               <select 
-                className="select bg-white border-stone-300 text-slate-700 text-xs py-1.5 font-mono"
+                className="select bg-white border-slate-300 text-slate-700 text-xs py-1.5 font-mono"
                 value={auditUserFilter}
                 onChange={e => setAuditUserFilter(e.target.value)}
               >
@@ -375,7 +378,7 @@ export default function Reports() {
               </select>
 
               <select 
-                className="select bg-white border-stone-300 text-slate-700 text-xs py-1.5 font-mono"
+                className="select bg-white border-slate-300 text-slate-700 text-xs py-1.5 font-mono"
                 value={auditActionFilter}
                 onChange={e => setAuditActionFilter(e.target.value)}
               >
@@ -406,7 +409,7 @@ export default function Reports() {
                 </thead>
                 <tbody>
                   {filteredAudit.map((r, i) => (
-                    <tr key={i} className="hover:bg-stone-100 transition-colors">
+                    <tr key={i} className="hover:bg-slate-100 transition-colors">
                       <td className="mono-id text-slate-600">
                         {typeof r.timestamp === 'string' ? r.timestamp.slice(0, 19).replace('T', ' ') : r.timestamp}
                       </td>
@@ -423,7 +426,7 @@ export default function Reports() {
                             ? 'bg-emerald-50 text-emerald-600 border-emerald-200' 
                             : r.status === 'Rejected' || r.status === 'Dismissed'
                             ? 'bg-rose-50 text-rose-600 border-rose-200'
-                            : 'bg-white text-slate-600 border-stone-300'
+                            : 'bg-white text-slate-600 border-slate-300'
                         }`}>
                           {r.status || 'Audited'}
                         </span>
@@ -448,7 +451,7 @@ export default function Reports() {
       {activeTab === 'architecture' && (
         <div className="space-y-5">
           <div className="card p-5 space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-stone-200 pb-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200 pb-3">
               <div className="flex items-center gap-2 text-slate-900 font-bold text-sm">
                 <Server className="w-4 h-4 text-indigo-600" />
                 NCIIPC Offline Supervisory Deployment Architecture & Parameters
@@ -465,7 +468,7 @@ export default function Reports() {
                 <button
                   onClick={handleTrainAutoML}
                   disabled={mlRunning}
-                  className="btn btn-sm flex items-center gap-1.5 text-xs font-mono border-stone-300 text-slate-700 hover:text-slate-900"
+                  className="btn btn-sm flex items-center gap-1.5 text-xs font-mono border-slate-300 text-slate-700 hover:text-slate-900"
                 >
                   <RefreshCw className={`w-3.5 h-3.5 ${mlRunning ? 'animate-spin' : ''}`} />
                   Auto-Train Ensemble
@@ -482,11 +485,11 @@ export default function Reports() {
                 { label: 'Target Efficiency Vectors', value: `${mlInfo?.targets?.length || 6} statutory evaluation targets`, status: 'Calibrated' },
                 { label: 'Statutory Authority', value: 'Section 70, Information Technology Act, 2000', status: 'Enforced' }
               ].map((item, i) => (
-                <div key={i} className="flex items-center justify-between p-3 rounded-lg bg-stone-50 border border-stone-200">
+                <div key={i} className="flex items-center justify-between p-3 rounded-lg bg-slate-50 border border-slate-200">
                   <span className="text-slate-500">{item.label}</span>
                   <div className="flex items-center gap-2">
                     <span className="text-slate-900 font-semibold">{item.value}</span>
-                    <span className="text-[9.5px] px-1.5 py-0.2 rounded bg-white border border-stone-300 text-indigo-600 font-bold">
+                    <span className="text-[9.5px] px-1.5 py-0.2 rounded bg-white border border-slate-300 text-indigo-600 font-bold">
                       {item.status}
                     </span>
                   </div>
@@ -507,7 +510,7 @@ export default function Reports() {
                 {mlResult.data?.results && (
                   <div className="text-slate-700 text-[11px] max-h-40 overflow-y-auto bg-white p-2.5 rounded border border-indigo-100">
                     {mlResult.data.results.slice(0, 4).map((r: any, idx: number) => (
-                      <div key={idx} className="py-1 border-b border-stone-100 last:border-0 flex items-center justify-between">
+                      <div key={idx} className="py-1 border-b border-slate-100 last:border-0 flex items-center justify-between">
                         <span><strong>{r.entity_id}</strong> ({r.period})</span>
                         <span className="text-slate-500">
                           {Object.entries(r.efficiency_scores || {}).map(([k, v]: [string, any]) => `${k}: ${v.score ?? v}`).join(' | ')}
@@ -524,7 +527,7 @@ export default function Reports() {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="card p-4 space-y-2 border-stone-200 bg-stone-50">
+            <div className="card p-4 space-y-2 border-slate-200 bg-slate-50">
               <div className="label text-indigo-600 font-mono flex items-center gap-1.5">
                 <Cpu className="w-3.5 h-3.5" /> (i) Model Architecture
               </div>
@@ -533,7 +536,7 @@ export default function Reports() {
               </p>
             </div>
 
-            <div className="card p-4 space-y-2 border-stone-200 bg-stone-50">
+            <div className="card p-4 space-y-2 border-slate-200 bg-slate-50">
               <div className="label text-emerald-600 font-mono flex items-center gap-1.5">
                 <Lock className="w-3.5 h-3.5" /> (ii) Air-Gap Model Updates
               </div>
@@ -542,7 +545,7 @@ export default function Reports() {
               </p>
             </div>
 
-            <div className="card p-4 space-y-2 border-stone-200 bg-stone-50">
+            <div className="card p-4 space-y-2 border-slate-200 bg-slate-50">
               <div className="label text-amber-600 font-mono flex items-center gap-1.5">
                 <ShieldCheck className="w-3.5 h-3.5" /> (iii) Explainability Controls
               </div>
