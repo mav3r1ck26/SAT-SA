@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { fetchIngestionQuality, uploadDataFile, fetchSampleBundles, loadSampleBundle, detectFindings } from '../api/client'
+import { fetchIngestionQuality, uploadDataFiles, fetchSampleBundles, loadSampleBundle, detectFindings } from '../api/client'
 import { 
   Upload, FileText, AlertTriangle, CheckCircle2, ShieldCheck, Database, 
   HardDrive, ArrowRight, Loader2, Sparkles, RefreshCw, Cpu, Layers, Check
@@ -10,6 +10,7 @@ export default function DataIngestion() {
   const [data, setData] = useState<any>(null)
   const [uploading, setUploading] = useState(false)
   const [uploadResult, setUploadResult] = useState<any>(null)
+  const [uploadProgress, setUploadProgress] = useState<any[]>([])
   const [sampleBundles, setSampleBundles] = useState<any[]>([])
   const [loadingSample, setLoadingSample] = useState<string | null>(null)
   const [detectingGaps, setDetectingGaps] = useState(false)
@@ -32,22 +33,33 @@ export default function DataIngestion() {
   const sources = ['Air-Gap Ingestion (CSV / JSON)', 'CEF / LEEF Syslog CSV', 'SIEM JSON Export', 'EDR Forensic Snapshot']
 
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
+    const files = Array.from(e.target.files || [])
+    e.target.value = ''
+    if (!files.length) return
     setUploading(true)
     setUploadResult(null)
+    setUploadProgress(files.map((file, fileIndex) => ({ fileName: file.name, fileIndex, status: 'queued' })))
+    reloadQuality()
+    const qualityRefreshTimer = window.setInterval(reloadQuality, 1200)
     try {
-      const result = await uploadDataFile(file, 'Manual Ingestion')
-      const count = result.inserted ?? result.total ?? result.data?.inserted ?? result.data?.total ?? 0
+      const result = await uploadDataFiles(files, progress => {
+        setUploadProgress(current => current.map(item => item.fileIndex === progress.fileIndex ? { ...item, ...progress } : item))
+        reloadQuality()
+      })
+      const fileCount = result.fileCount ?? files.length
+      const failedFiles = result.failedFiles ?? 0
       setUploadResult({
         ...result,
-        message: `Successfully ingested ${count} records from ${file.name}.`
+        message: `Processed ${fileCount - failedFiles} of ${fileCount} files; stored ${result.sourceRecordsStored ?? 0} parsed source rows and ${result.persistedRecords ?? 0} operational records from ${result.totalRecords ?? 0} parsed records.`
       })
       reloadQuality()
     } catch (err: any) {
       setUploadResult({ error: err.message || String(err) })
+    } finally {
+      window.clearInterval(qualityRefreshTimer)
+      reloadQuality()
+      setUploading(false)
     }
-    setUploading(false)
   }
 
   const handleLoadSample = async (filename: string, title: string) => {
@@ -59,7 +71,7 @@ export default function DataIngestion() {
         ...result,
         filename,
         title,
-        message: `Ingested ${result.inserted ?? 0} new records (${result.total ?? 0} verified) from test bundle "${title}".`
+        message: `Accepted ${result.validRecords ?? result.inserted ?? 0} records (${result.sourceRecordsStored ?? 0} source rows and ${result.inserted ?? 0} operational records stored) from test bundle "${title}".`
       })
       reloadQuality()
     } catch (err) {
@@ -79,6 +91,10 @@ export default function DataIngestion() {
     }
     setDetectingGaps(false)
   }
+
+  const uploadHasIssues = Boolean(uploadResult?.files?.some((file: any) =>
+    !file.success || file.batch?.status === 'partial' || file.persistenceStatus === 'partial'
+  ))
 
   return (
     <div className="p-6 max-w-[1700px] mx-auto space-y-6">
@@ -209,21 +225,112 @@ export default function DataIngestion() {
                 </>
               ) : (
                 <>
-                  <Upload className="w-4 h-4" /> Upload Custom Telemetry File
+                  <Upload className="w-4 h-4" /> Upload Telemetry File(s)
                 </>
               )}
-              <input type="file" accept=".csv,.json,.zip,.tar.gz" className="hidden" onChange={handleUpload} disabled={uploading} />
+              <input type="file" accept=".csv,.json" multiple className="hidden" onChange={handleUpload} disabled={uploading} />
             </label>
           </div>
         </div>
       </div>
 
       {/* Feedback Alerts */}
+      {uploading && uploadProgress.length > 0 && (
+        <div className="card p-4 border-indigo-200 bg-indigo-50">
+          <div className="label text-indigo-700 font-bold mb-2">Live File Processing</div>
+          <div className="space-y-1.5">
+            {uploadProgress.map((item, index) => (
+              <div key={`${item.fileName}-${index}`} className="flex items-center gap-2 text-xs font-mono text-slate-700">
+                {item.status === 'uploading'
+                  ? <Loader2 className="w-3.5 h-3.5 text-indigo-600 animate-spin shrink-0" />
+                  : item.status === 'processed'
+                    ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                    : item.status === 'partial' || item.status === 'rejected'
+                      ? <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                      : <FileText className="w-3.5 h-3.5 text-slate-400 shrink-0" />}
+                <span className="break-all">{item.fileName}</span>
+                <span className="text-slate-500">{item.status}{item.error ? ` · ${item.error}` : ''}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {uploadResult && !uploadResult.error && (
-        <div className="flex items-center gap-3 rounded-lg border p-4 bg-emerald-50 border-emerald-200 shadow-sm">
-          <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
-          <div className="text-xs font-mono text-slate-800">
-            <strong>Ingestion Complete:</strong> {uploadResult.message || `Ingested ${uploadResult.inserted} records into MongoDB replica with verified SHA-256 checksums.`}
+        <div className={`flex items-start gap-3 rounded-lg border p-4 shadow-sm ${uploadHasIssues ? 'bg-amber-50 border-amber-200' : 'bg-emerald-50 border-emerald-200'}`}>
+          {uploadHasIssues
+            ? <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+            : <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />}
+          <div className="text-xs font-mono text-slate-800 flex-1">
+            <strong>{uploadHasIssues ? 'Ingestion Completed with Issues:' : 'Ingestion Complete:'}</strong> {uploadResult.message || `Ingested ${uploadResult.inserted} records.`}
+            {uploadResult.files?.length > 0 && (
+              <div className="mt-3 space-y-2">
+                {uploadResult.files.map((file: any, index: number) => {
+                  const status = file.error ? 'failed' : file.batch?.status || file.persistenceStatus || 'processed'
+                  const persisted = file.persistedRecords ?? file.inserted ?? 0
+                  const sourceStored = file.sourceRecordsStored ?? file.batch?.sourceRecordsStored ?? 0
+                  const received = file.total ?? file.batch?.recordsReceived ?? 0
+                  const badgeStyle = status === 'failed'
+                    ? 'bg-rose-50 text-rose-700 border-rose-200'
+                    : status === 'partial'
+                      ? 'bg-amber-50 text-amber-700 border-amber-200'
+                      : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                  return (
+                    <div key={`${file.fileName}-${index}`} className="rounded-md border border-slate-200 bg-white px-3 py-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <strong className="break-all">{file.fileName}</strong>
+                        <span className={`badge border text-[10px] font-mono ${badgeStyle}`}>{status}</span>
+                        <span className="text-slate-600">{received} parsed · {sourceStored} source rows stored · {persisted} alerts/cases stored</span>
+                      </div>
+                      {file.error && <div className="mt-1 text-rose-700">{file.error}</div>}
+                      {file.persistenceErrors?.length > 0 && <div className="mt-1 text-rose-700">{file.persistenceErrors.map((error: any) => error.message).join('; ')}</div>}
+                      {file.batch?.warnings?.length > 0 && <div className="mt-1 text-amber-800">{file.batch.warnings.join(' ')}</div>}
+                      {file.assignedEntities?.length > 0 && (
+                        <div className="mt-1 text-indigo-700">
+                          {file.assignedEntities.map((entity: any) => `${entity.id} · ${entity.name}${entity.created ? ' (new)' : ''}`).join('  |  ')}
+                        </div>
+                      )}
+                      {file.mlInference && <div className="mt-1 text-slate-500">ML inference: {file.mlInference.status}{file.mlInference.evaluatedEntities ? ` · ${file.mlInference.evaluatedEntities} entity-period vectors` : ''}</div>}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+            {!uploadResult.files?.length && uploadResult.assignedEntities?.length > 0 && (
+              <div className="mt-2">
+                {uploadResult.assignedEntities.map((entity: any) => (
+                  <div key={entity.id} className="text-indigo-700">
+                    CSE assignment: <strong>{entity.id}</strong> · {entity.name}{entity.created ? ' (new)' : ' (existing)'}
+                  </div>
+                ))}
+              </div>
+            )}
+            {!uploadResult.files?.length && uploadResult.mlInference && (
+              <div className={`mt-3 rounded-md border px-3 py-2 ${uploadResult.mlInference.status === 'completed' ? 'bg-white border-emerald-200' : uploadResult.mlInference.status === 'failed' ? 'bg-amber-50 border-amber-200' : 'bg-slate-50 border-slate-200'}`}>
+                <div className="font-semibold flex items-center gap-1.5">
+                  <Cpu className="w-3.5 h-3.5" />
+                  Automatic ML inference: {uploadResult.mlInference.status === 'completed'
+                    ? `completed for ${uploadResult.mlInference.evaluatedEntities} entity-period vectors`
+                    : uploadResult.mlInference.status === 'failed'
+                      ? 'could not complete'
+                      : 'skipped'}
+                  {uploadResult.mlInference.source && uploadResult.mlInference.source !== 'none' && (
+                    <span className="font-normal text-slate-500">· {uploadResult.mlInference.source.replace(/_/g, ' ')}</span>
+                  )}
+                </div>
+                {uploadResult.mlInference.error && <div className="mt-1 text-amber-800">{uploadResult.mlInference.error}</div>}
+                {uploadResult.mlInference.results?.length > 0 && (
+                  <div className="mt-2 space-y-1 text-slate-600">
+                    {uploadResult.mlInference.results.slice(0, 3).map((result: any, index: number) => (
+                      <div key={`${result.entity_id}-${result.period}-${index}`}>
+                        {result.entity_id} · {result.period} · model risk {result.overall_assessment?.overall_risk_score ?? '—'} · {result.overall_assessment?.recommendation ?? 'Assessment returned'}
+                      </div>
+                    ))}
+                    {uploadResult.mlInference.resultsTruncated && <div>Showing the first 25 results; all {uploadResult.mlInference.evaluatedEntities} vectors were evaluated.</div>}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -274,7 +381,7 @@ export default function DataIngestion() {
             {[
               { label: 'Total Ingested Alerts', value: totals.alerts, icon: HardDrive, color: 'text-indigo-600' },
               { label: 'Correlated Forensic Cases', value: totals.cases, icon: CheckCircle2, color: 'text-emerald-600' },
-              { label: 'Completed Ingestion Batches', value: Math.max(1, batches.length), icon: FileText, color: 'text-amber-600' }
+              { label: 'Recent Ingestion Batches', value: batches.length, icon: FileText, color: 'text-amber-600' }
             ].map((stat, i) => {
               const Icon = stat.icon
               return (
@@ -299,8 +406,11 @@ export default function DataIngestion() {
                       <th>Source Stream</th>
                       <th className="text-right">Records Ingested</th>
                       <th className="text-right">Valid Records</th>
+                      <th className="text-right">Alerts/Cases Stored</th>
+                      <th className="text-right">Source Rows Stored</th>
                       <th className="text-right">Quality Score</th>
                       <th>Status</th>
+                      <th>ML Inference</th>
                       <th className="text-right">Date</th>
                     </tr>
                   </thead>
@@ -310,10 +420,17 @@ export default function DataIngestion() {
                         <td className="text-xs font-mono text-slate-800">{b.source}</td>
                         <td className="font-mono text-xs text-slate-600 text-right">{b.recordsReceived}</td>
                         <td className="font-mono text-xs text-slate-600 text-right">{b.validRecords}</td>
+                        <td className="font-mono text-xs text-slate-600 text-right">{b.persistedRecords ?? '—'}</td>
+                        <td className="font-mono text-xs text-slate-600 text-right">{b.sourceRecordsStored ?? '—'}</td>
                         <td className="font-mono text-xs font-bold text-indigo-600 text-right">{b.qualityPct}%</td>
                         <td>
-                          <span className="badge border text-[10px] font-mono bg-emerald-50 text-emerald-600 border-emerald-200">
+                          <span className={`badge border text-[10px] font-mono ${b.status === 'failed' ? 'bg-rose-50 text-rose-700 border-rose-200' : b.status === 'partial' ? 'bg-amber-50 text-amber-700 border-amber-200' : b.status === 'processing' ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'bg-emerald-50 text-emerald-600 border-emerald-200'}`}>
                             {b.status}
+                          </span>
+                        </td>
+                        <td>
+                          <span className={`badge border text-[10px] font-mono ${b.mlInference?.status === 'completed' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : b.mlInference?.status === 'failed' ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-slate-50 text-slate-500 border-slate-200'}`}>
+                            {b.mlInference?.status === 'completed' ? `Complete · ${b.mlInference.evaluatedEntities}` : b.mlInference?.status || 'Not run'}
                           </span>
                         </td>
                         <td className="text-xs font-mono text-slate-500 text-right">{new Date(b.createdAt).toLocaleDateString()}</td>

@@ -14,11 +14,25 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 }
 
 // ---- Entities ----
+export const fetchAssessmentFramework = () =>
+  request<any>('/assessment-framework')
+
 export const fetchEntities = (params?: Record<string, string>) =>
   request<any[]>('/entities' + (params ? '?' + new URLSearchParams(params) : ''))
 
-export const fetchEntity = (id: string) =>
-  request<any>(`/entities/${encodeURIComponent(id)}`)
+export const fetchEntity = (id: string, period?: string) => {
+  const query = period ? `?${new URLSearchParams({ period })}` : ''
+  return request<any>(`/entities/${encodeURIComponent(id)}${query}`)
+}
+
+export const fetchEntityAssessmentHistory = (id: string) =>
+  request<any>(`/entities/${encodeURIComponent(id)}/assessment-history`)
+
+export const saveEntityAssessment = (id: string, period: string, dimensions: Record<string, number>) =>
+  request<any>(`/entities/${encodeURIComponent(id)}/assessment`, {
+    method: 'PUT',
+    body: JSON.stringify({ period, dimensions })
+  })
 
 export const createEntity = (data: any) =>
   request<any>('/entities', { method: 'POST', body: JSON.stringify(data) })
@@ -125,18 +139,60 @@ export const fetchCoverageMatrix = (entityId?: string) =>
 export const fetchAnomalies = (params?: Record<string, string>) =>
   request<{ anomalies: any[]; total: number; page: number; pageSize: number; pageCount: number; summary: any }>(`/analytics/anomalies${params ? `?${new URLSearchParams(params)}` : ''}`)
 
-export async function uploadDataFile(file: File, source?: string) {
-  const formData = new FormData()
-  formData.append('file', file)
-  if (source) formData.append('source', source)
-  const res = await fetch(`${BASE}/ingestion/upload`, { method: 'POST', body: formData })
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: { message: `Upload failed: ${res.status}` } }))
-    throw new Error(err.error?.message || `Upload failed: ${res.status}`)
-  }
-  const json = await res.json()
-  return json && typeof json === 'object' && 'data' in json ? json.data : json
+export type UploadFileProgress = {
+  fileName: string
+  fileIndex: number
+  status: 'queued' | 'uploading' | 'processed' | 'partial' | 'rejected'
+  result?: any
+  error?: string
 }
+
+export async function uploadDataFiles(files: File[], onProgress?: (progress: UploadFileProgress) => void) {
+  if (!files.length) throw new Error('Select at least one CSV or JSON file.')
+  const results: any[] = []
+  for (const [fileIndex, file] of files.entries()) {
+    onProgress?.({ fileName: file.name, fileIndex, status: 'uploading' })
+    try {
+      const formData = new FormData()
+      formData.append('files', file, file.name)
+      const res = await fetch(`${BASE}/ingestion/upload`, { method: 'POST', body: formData })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: { message: `Upload failed: ${res.status}` } }))
+        throw new Error(err.error?.message || `Upload failed: ${res.status}`)
+      }
+      const json = await res.json()
+      const response = json && typeof json === 'object' && 'data' in json ? json.data : json
+      const result = response.files?.[0] || { success: response.success !== false, fileName: file.name, ...response }
+      results.push(result)
+      onProgress?.({
+        fileName: file.name,
+        fileIndex,
+        status: !result.success ? 'rejected' : result.batch?.status === 'partial' ? 'partial' : 'processed',
+        result,
+        error: result.error
+      })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      const result = { success: false, fileName: file.name, error: message }
+      results.push(result)
+      onProgress?.({ fileName: file.name, fileIndex, status: 'rejected', result, error: message })
+    }
+  }
+
+  return {
+    files: results,
+    fileCount: results.length,
+    failedFiles: results.filter(result => !result.success).length,
+    partialFiles: results.filter(result => result.batch?.status === 'partial' || result.persistenceStatus === 'partial').length,
+    inserted: results.reduce((sum, result) => sum + (result.inserted || 0), 0),
+    persistedRecords: results.reduce((sum, result) => sum + (result.persistedRecords || 0), 0),
+    sourceRecordsStored: results.reduce((sum, result) => sum + (result.sourceRecordsStored || 0), 0),
+    validRecords: results.reduce((sum, result) => sum + (result.validRecords || 0), 0),
+    totalRecords: results.reduce((sum, result) => sum + (result.total || 0), 0)
+  }
+}
+
+export const uploadDataFile = (file: File) => uploadDataFiles([file])
 
 export const ingestFromAPI = (records: any[]) =>
   request<any>('/ingestion/api', { method: 'POST', body: JSON.stringify({ records }) })

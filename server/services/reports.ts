@@ -5,6 +5,7 @@ import { Case } from '../models/Case'
 import { Finding } from '../models/Finding'
 import { TelemetryCoverage } from '../models/TelemetryCoverage'
 import { peerBenchmark, overviewKPIs, detectExecutionGaps, detectBlindSpots, riskDistribution } from './analytics'
+import { buildEntityAssessment } from './assessmentFramework'
 
 // ============================================================
 // REPORT GENERATION
@@ -50,6 +51,7 @@ export async function entityAssessmentReport(entityId: string): Promise<Generate
     generatedAt: new Date().toISOString(),
     data: {
       entity: { id: entity.id, name: entity.name, sector: entity.sector, criticality: entity.criticality, telemetryCoverage: entity.telemetryCoverage },
+      assessment: buildEntityAssessment(metric),
       riskScore: metric.riskScore,
       prevRiskScore: metric.prevRiskScore,
       scoreBreakdown: { threatDetection: metric.threatDetection, investigation: metric.investigation, escalation: metric.escalation, incidentResponse: metric.incidentResponse, securityOperations: metric.securityOperations, governanceOversight: metric.governanceOversight, operationalDiscipline: metric.operationalDiscipline, cyberResilience: metric.cyberResilience },
@@ -78,6 +80,7 @@ export async function crossEntityReport(): Promise<GeneratedReport> {
       distribution,
       entities: entities.map(e => ({
         id: e.id, sector: e.sector, criticality: e.criticality,
+        assessment: buildEntityAssessment(metricMap.get(e.id)),
         riskScore: metricMap.get(e.id)?.riskScore,
         priority: metricMap.get(e.id)?.priority,
         telemetryCoverage: e.telemetryCoverage

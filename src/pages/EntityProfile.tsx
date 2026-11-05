@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react'
 import { useApp } from '../context/AppContext'
 import { RiskScoreGauge, SeverityBadge, Confidence, TelemetryPulse, MitreBadge } from '../components/ui'
-import { Radar, ScoreBars } from '../components/charts'
-import { fetchEntity, fetchEntities, fetchFindings, fetchEvidenceTimeline, fetchBenchmark } from '../api/client'
+import { AreaChart, Radar, ScoreBars } from '../components/charts'
+import { fetchEntity, fetchEntities, fetchEntityAssessmentHistory, fetchFindings, fetchEvidenceTimeline, fetchBenchmark, saveEntityAssessment } from '../api/client'
 import { downloadCSV } from '../utils/export'
 import { ChevronLeft, Shield, Clock, FileText, Activity, AlertOctagon, CheckCircle2, AlertTriangle, Database, Download, ArrowRight, BarChart3 } from 'lucide-react'
 
@@ -19,7 +19,7 @@ const fallbackTimeline = [
 ]
 
 export default function EntityProfile() {
-  const { selectedEntity, setSelectedEntity, setCurrentPage } = useApp()
+  const { selectedEntity, setSelectedEntity, setCurrentPage, assessmentPeriod } = useApp()
   const [activeTab, setActiveTab] = useState('Overview')
   const [entity, setEntity] = useState<any>(null)
   const [loading, setLoading] = useState(true)
@@ -29,6 +29,10 @@ export default function EntityProfile() {
   const [findings, setFindings] = useState<any[]>([])
   const [timeline, setTimeline] = useState<any[]>([])
   const [benchmarkData, setBenchmarkData] = useState<any[]>([])
+  const [assessmentHistory, setAssessmentHistory] = useState<any[]>([])
+  const [assessmentDraft, setAssessmentDraft] = useState<Record<string, number | ''>>({})
+  const [savingAssessment, setSavingAssessment] = useState(false)
+  const [assessmentSaveMessage, setAssessmentSaveMessage] = useState('')
   const entityId = selectedEntity || 'CSE-014'
 
   useEffect(() => {
@@ -40,10 +44,17 @@ export default function EntityProfile() {
     setEntity(null)
     setLoading(true)
     setLoadError('')
-    fetchEntity(entityId)
-      .then(result => { if (active) setEntity(result) })
+    fetchEntity(entityId, assessmentPeriod)
+      .then(result => {
+        if (!active) return
+        setEntity(result)
+        setAssessmentDraft(Object.fromEntries((result.assessment?.dimensions || []).map((dimension: any) => [dimension.key, dimension.score ?? ''])))
+      })
       .catch(error => { if (active) setLoadError(error instanceof Error ? error.message : 'Entity request failed') })
       .finally(() => { if (active) setLoading(false) })
+    fetchEntityAssessmentHistory(entityId)
+      .then(result => { if (active) setAssessmentHistory(Array.isArray(result?.history) ? result.history : []) })
+      .catch(() => { if (active) setAssessmentHistory([]) })
     fetchFindings({ entityId }).then(setFindings).catch(() => setFindings([]))
     fetchBenchmark(entityId)
       .then(d => setBenchmarkData(Array.isArray(d) ? d : []))
@@ -52,7 +63,7 @@ export default function EntityProfile() {
       .then(r => setTimeline(r.timeline && r.timeline.length ? r.timeline : fallbackTimeline))
       .catch(() => setTimeline(fallbackTimeline))
     return () => { active = false }
-  }, [entityId, reloadKey])
+  }, [entityId, assessmentPeriod, reloadKey])
 
   if (!entity && loading) return (
     <div className="p-8 max-w-[1700px] mx-auto text-center space-y-3">
@@ -74,12 +85,29 @@ export default function EntityProfile() {
 
   const riskScore = entity.riskScore ?? entity.metrics?.riskScore ?? 50
   const completeness = entity.dataCompleteness ?? 85
+  const assessment = entity.assessment
+
+  const handleSaveAssessment = async () => {
+    setSavingAssessment(true)
+    setAssessmentSaveMessage('')
+    try {
+      const numericScores = Object.fromEntries(Object.entries(assessmentDraft).map(([key, value]) => [key, Number(value)])) as Record<string, number>
+      await saveEntityAssessment(entityId, assessmentPeriod, numericScores)
+      setAssessmentSaveMessage(`Assessment saved for ${assessmentPeriod}.`)
+      setReloadKey(key => key + 1)
+    } catch (error) {
+      setAssessmentSaveMessage(error instanceof Error ? error.message : 'Could not save assessment.')
+    } finally {
+      setSavingAssessment(false)
+    }
+  }
 
   const exportEntityDossier = () => {
     const payload = {
       entity,
       findings,
       timeline,
+      assessmentHistory,
       exportedAt: new Date().toISOString(),
       statutoryClassification: "NCIIPC // SUPERVISORY EXAMINATION SYSTEM"
     }
@@ -145,7 +173,7 @@ export default function EntityProfile() {
 
             <div className="flex flex-wrap items-center gap-x-6 gap-y-1.5 text-xs font-mono text-slate-400">
               <span>Sector: <strong className="text-slate-700">{entity.sector}</strong></span>
-              <span>Assessment Period: <strong className="text-slate-700">Q2 FY 2026–27</strong></span>
+              <span>Assessment Period: <strong className="text-slate-700">{entity.assessmentPeriod || assessmentPeriod}</strong></span>
               <span>Supervisory Tier: <strong className="text-amber-600">{entity.criticality || 'Tier 1 - Critical'}</strong></span>
               <span>Audit Status: <strong className="text-emerald-600">{entity.status || 'Compliant'}</strong></span>
               <span>Last Telemetry Sync: <strong className="text-slate-600">{entity.lastSubmission ? new Date(entity.lastSubmission).toLocaleDateString() : '2026-09-24'}</strong></span>
@@ -164,6 +192,148 @@ export default function EntityProfile() {
           </div>
         </div>
       </div>
+
+      {assessment && (
+        <section className="card p-4 space-y-3" aria-label="Standardized SOC assessment">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-bold text-slate-800">Standardized SOC Maturity Assessment</h2>
+              <p className="text-xs text-slate-500 mt-1">{assessment.frameworkName} · v{assessment.frameworkVersion}</p>
+            </div>
+            <div className="flex items-center gap-4">
+              <div className="text-right">
+                <div className="label text-[10px] text-slate-400 uppercase">Maturity Score</div>
+                <div className="font-mono text-xl font-bold text-indigo-700">{assessment.maturityScore ?? '—'}<span className="text-xs text-slate-400"> / 100</span></div>
+              </div>
+              <div className="text-right border-l border-slate-200 pl-4">
+                <div className="label text-[10px] text-slate-400 uppercase">Dimensions Rated</div>
+                <div className="font-mono text-sm font-bold text-slate-700">{assessment.ratedDimensions}/{assessment.totalDimensions}</div>
+              </div>
+            </div>
+          </div>
+          <p className="text-xs text-slate-600">{assessment.maturityFormula} {assessment.scoreScale?.direction}</p>
+          <details className="border-t border-slate-200 pt-2">
+            <summary className="cursor-pointer text-xs font-semibold text-indigo-700">Record numeric scores for {entity.assessmentPeriod || assessmentPeriod}</summary>
+            <div className="mt-3 space-y-3">
+              <p className="text-[10px] text-slate-500">Enter period-specific normalized scores (0–100) for all framework dimensions. Saving updates this entity’s record for the selected reporting period.</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-2">
+                {assessment.dimensions.map((dimension: any) => (
+                  <label key={dimension.key} className="rounded border border-slate-200 bg-white p-2 space-y-1">
+                    <span className="block text-[10px] font-semibold text-slate-600">{dimension.label}</span>
+                    <input
+                      type="number"
+                      min={0}
+                      max={100}
+                      step={1}
+                      value={assessmentDraft[dimension.key] ?? ''}
+                      onChange={event => setAssessmentDraft(draft => ({ ...draft, [dimension.key]: event.target.value === '' ? '' : Number(event.target.value) }))}
+                      className="input w-full text-xs font-mono"
+                      aria-label={`${dimension.label} score`}
+                    />
+                  </label>
+                ))}
+              </div>
+              <div className="flex flex-wrap items-center gap-3">
+                <button className="btn btn-sm text-xs" onClick={handleSaveAssessment} disabled={savingAssessment || assessment.dimensions.some((dimension: any) => typeof assessmentDraft[dimension.key] !== 'number' || !Number.isFinite(assessmentDraft[dimension.key]) || (assessmentDraft[dimension.key] as number) < 0 || (assessmentDraft[dimension.key] as number) > 100)}>
+                  {savingAssessment ? 'Saving…' : 'Save Period Assessment'}
+                </button>
+                {assessmentSaveMessage && <span className="text-xs text-slate-600" role="status">{assessmentSaveMessage}</span>}
+              </div>
+            </div>
+          </details>
+          <details className="border-t border-slate-200 pt-2">
+            <summary className="cursor-pointer text-xs font-semibold text-indigo-700">View dimension definitions, weights, evidence, and reference mapping</summary>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-2 mt-3">
+              {assessment.dimensions.map((dimension: any) => (
+                <div key={dimension.key} className="rounded-lg border border-slate-200 bg-white p-3 space-y-1.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-bold text-slate-800">{dimension.label}</span>
+                    <span className="text-[10px] font-mono text-indigo-700">{dimension.score ?? '—'} / 100 · {dimension.weightPercent}%</span>
+                  </div>
+                  <p className="text-xs text-slate-600">{dimension.purpose}</p>
+                  <p className="text-[10px] text-slate-500">Expected evidence: {dimension.evidenceIndicators.join(' · ')}</p>
+                  <div className="flex flex-wrap gap-1">
+                    {dimension.nistCsf.map((reference: any) => (
+                      <span key={reference.id} title={reference.name} className="px-1.5 py-0.5 rounded bg-indigo-50 border border-indigo-100 text-[10px] font-mono text-indigo-700">{reference.id}</span>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <p className="text-[10px] text-amber-800 bg-amber-50 border border-amber-100 rounded p-2 mt-3">{assessment.alignmentNotice}</p>
+          </details>
+          <div className="border-t border-slate-200 pt-3 space-y-3">
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <div>
+                <h3 className="text-xs font-bold text-slate-800">Longitudinal Assessment History</h3>
+                <p className="text-[10px] text-slate-500 mt-0.5">Period-specific numeric maturity scores and dimension results.</p>
+              </div>
+              {assessmentHistory.some((point: any) => point.provenance === 'sample') && (
+                <span className="badge badge-warning text-[10px]">Includes illustrative sample history</span>
+              )}
+            </div>
+            {assessmentHistory.length === 0 ? (
+              <p className="rounded border border-dashed border-slate-300 bg-slate-50 p-3 text-xs text-slate-500">
+                No saved assessment history is available yet. A trend appears after assessments are recorded for multiple periods.
+              </p>
+            ) : (
+              <>
+                {assessmentHistory.filter((point: any) => point.maturityScore != null).length >= 2 ? (
+                  <AreaChart
+                    data={assessmentHistory.filter((point: any) => point.maturityScore != null).map((point: any) => ({
+                      label: point.period.replace(' FY ', ' ').replace('2025-26', "'25/26").replace('2026-27', "'26/27"),
+                      maturity: point.maturityScore
+                    }))}
+                    series={[{ key: 'maturity', label: 'SOC maturity score (0–100)', color: '#4f46e5' }]}
+                    height={145}
+                    maxValue={100}
+                    valueFormatter={(value: number) => `${value}/100`}
+                  />
+                ) : (
+                  <p className="rounded border border-dashed border-slate-300 bg-slate-50 p-3 text-xs text-slate-500">
+                    One period is recorded. Record or load another period to display a trend.
+                  </p>
+                )}
+                <div className="overflow-x-auto rounded-lg border border-slate-200">
+                  <table className="w-full min-w-[600px] text-left">
+                    <thead className="bg-slate-50 text-[10px] uppercase tracking-wide text-slate-500">
+                      <tr>
+                        <th className="px-3 py-2">Reporting period</th>
+                        <th className="px-3 py-2">Maturity</th>
+                        <th className="px-3 py-2">Dimensions rated</th>
+                        <th className="px-3 py-2">Record type</th>
+                        <th className="px-3 py-2">Dimension scores</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {assessmentHistory.slice().reverse().map((point: any) => (
+                        <tr key={point.period} className="border-t border-slate-100 text-xs">
+                          <td className="px-3 py-2 font-mono text-slate-700">{point.period}</td>
+                          <td className="px-3 py-2 font-mono font-bold text-indigo-700">{point.maturityScore == null ? '—' : `${point.maturityScore}/100`}</td>
+                          <td className="px-3 py-2 font-mono text-slate-600">{point.ratedDimensions}/{point.totalDimensions}</td>
+                          <td className="px-3 py-2 text-slate-600">{point.provenance === 'sample' ? 'Illustrative sample' : point.provenance === 'submitted' ? 'Submitted metrics' : 'Legacy record'}</td>
+                          <td className="px-3 py-2">
+                            <details>
+                              <summary className="cursor-pointer text-indigo-700">View scores</summary>
+                              <div className="flex max-w-[520px] flex-wrap gap-1.5 py-2">
+                                {point.dimensions.map((dimension: any) => (
+                                  <span key={dimension.key} className="rounded border border-slate-200 bg-white px-1.5 py-1 text-[10px] text-slate-600">
+                                    {dimension.label}: <strong className="font-mono text-slate-800">{dimension.score ?? '—'}</strong>
+                                  </span>
+                                ))}
+                              </div>
+                            </details>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
+          </div>
+        </section>
+      )}
 
       {/* Navigation Tabs */}
       <div className="flex gap-1.5 border-b border-slate-200 overflow-x-auto pb-1">
@@ -185,12 +355,13 @@ export default function EntityProfile() {
             <div className="card p-5">
               <div className="label text-[10px] text-slate-400 uppercase font-mono mb-2 flex items-center justify-between">
                 <span>Supervisory Risk Score</span>
-                <span className="text-indigo-600">ML ENSEMBLE</span>
+                <span className="text-indigo-600">SAT-SA v{assessment?.frameworkVersion || '1.0.0'}</span>
               </div>
               
               <div className="flex justify-center py-2">
                 <RiskScoreGauge score={riskScore} />
               </div>
+              <p className="text-[10px] text-slate-500 leading-relaxed">{assessment?.riskScoreDefinition || 'Supervisory risk is an attention indicator and is distinct from the maturity score.'}</p>
 
               <div className="mt-4 pt-4 border-t border-slate-200">
                 <div className="label text-[10px] text-slate-400 uppercase font-mono mb-2">Capability Sub-Scores</div>
@@ -198,8 +369,10 @@ export default function EntityProfile() {
                   { label: 'Threat Detection', value: detectionScore },
                   { label: 'Investigation Rigor', value: investigationScore },
                   { label: 'Escalation Protocol', value: escalationScore },
+                  { label: 'Incident Response', value: entity.incidentResponse ?? entity.metrics?.incidentResponse ?? 50 },
                   { label: 'SecOps Cadence', value: entity.securityOperations ?? entity.metrics?.securityOperations ?? 60 },
                   { label: 'Gov. & Oversight', value: entity.governanceOversight ?? entity.metrics?.governanceOversight ?? 65 },
+                  { label: 'Operational Discipline', value: entity.operationalDiscipline ?? entity.metrics?.operationalDiscipline ?? 50 },
                   { label: 'Cyber Resilience', value: entity.cyberResilience ?? entity.metrics?.cyberResilience ?? 70 }
                 ]} />
               </div>
@@ -233,8 +406,10 @@ export default function EntityProfile() {
                   { label: 'Detection', value: detectionScore },
                   { label: 'Investigation', value: investigationScore },
                   { label: 'Escalation', value: escalationScore },
+                  { label: 'Incident Response', value: entity.incidentResponse ?? 50 },
                   { label: 'Operations', value: entity.securityOperations ?? 60 },
                   { label: 'Governance', value: entity.governanceOversight ?? 65 },
+                  { label: 'Discipline', value: entity.operationalDiscipline ?? entity.metrics?.operationalDiscipline ?? 50 },
                   { label: 'Resilience', value: entity.cyberResilience ?? 70 }
                 ]} />
               </div>

@@ -5,7 +5,8 @@ const router = Router()
 
 function handleError(err: unknown, res: Response) {
   const message = err instanceof Error ? err.message : 'Unknown error'
-  res.status(500).json({ success: false, error: { code: 'INTERNAL_ERROR', message } })
+  const statusCode = typeof err === 'object' && err !== null && 'statusCode' in err ? Number((err as any).statusCode) : 500
+  res.status(statusCode).json({ success: false, error: { code: statusCode === 409 ? 'CONFIGURATION_LOCKED' : 'INTERNAL_ERROR', message } })
 }
 
 router.get('/category/:category', async (req, res) => {

@@ -7,6 +7,7 @@ import { Finding } from '../models/Finding'
 import { EvidenceEvent } from '../models/EvidenceEvent'
 import { AuditLog } from '../models/AuditLog'
 import { getConfig, getConfigCategory } from './configuration'
+import { ASSESSMENT_FRAMEWORK, buildEntityAssessment, getFrameworkDimensionWeights } from './assessmentFramework'
 
 const PERIOD = 'Q2 FY 2026-27'
 
@@ -23,7 +24,6 @@ interface ConfigValues {
   peerDeviationSignificant: number
   peerMinSampleSize: number
   riskWeights: Record<string, number>
-  dimensionWeights: Record<string, number>
   confidenceFactors: Record<string, number>
   reviewPriorityWeights: Record<string, number>
   anomalyIQRMultiplier: number
@@ -52,7 +52,6 @@ async function loadConfig(): Promise<ConfigValues> {
     getConfig('peerDeviationSignificant'),
     getConfig('peerMinSampleSize'),
     getConfig('riskWeights'),
-    getConfig('dimensionWeights'),
     getConfig('confidenceFactors'),
     getConfig('reviewPriorityWeights'),
     getConfig('anomalyIQRMultiplier'),
@@ -67,7 +66,7 @@ async function loadConfig(): Promise<ConfigValues> {
     'rapidClosurePercentile', 'criticalNoEscalationThreshold', 'templateReuseThreshold',
     'zeroDepthThreshold', 'telemetryCoverageWarning', 'negativeSpaceCriticalThreshold',
     'negativeSpaceWarningThreshold', 'negativeSpaceHistoricalDeviation', 'negativeSpacePeerDeviation',
-    'peerDeviationSignificant', 'peerMinSampleSize', 'riskWeights', 'dimensionWeights',
+    'peerDeviationSignificant', 'peerMinSampleSize', 'riskWeights',
     'confidenceFactors', 'reviewPriorityWeights', 'anomalyIQRMultiplier', 'anomalyZScoreThreshold',
     'anomalyPercentileLow', 'anomalyPercentileHigh', 'mlEnabled', 'mlRiskThreshold', 'mlConfidenceThreshold'
   ]
@@ -137,13 +136,18 @@ function percentileRank(value: number, population: number[]): number {
 }
 
 export async function recomputeEntityRisk(entityId: string) {
-  const config = await loadConfig()
   const metric = await EntityMetric.findOne({ entityId, period: PERIOD })
   if (!metric) return null
-  const newScore = computeRiskScore(metric, config.dimensionWeights)
-  if (newScore !== metric.riskScore) {
+  const newScore = computeRiskScore(metric, getFrameworkDimensionWeights())
+  const assessment = buildEntityAssessment(metric)
+  const needsSave = newScore !== metric.riskScore || metric.maturityScore !== assessment.maturityScore ||
+    metric.assessmentFrameworkId !== ASSESSMENT_FRAMEWORK.id || metric.assessmentFrameworkVersion !== ASSESSMENT_FRAMEWORK.version
+  if (needsSave) {
     metric.riskScore = newScore
     metric.riskLevel = riskLevel(newScore)
+    metric.maturityScore = assessment.maturityScore
+    metric.assessmentFrameworkId = ASSESSMENT_FRAMEWORK.id
+    metric.assessmentFrameworkVersion = ASSESSMENT_FRAMEWORK.version
     await metric.save()
   }
   return newScore
@@ -152,10 +156,15 @@ export async function recomputeEntityRisk(entityId: string) {
 export async function recomputeAllRisks() {
   const metrics = await EntityMetric.find({ period: PERIOD })
   for (const m of metrics) {
-    const newScore = computeRiskScore(m, (await loadConfig()).dimensionWeights)
-    if (newScore !== m.riskScore) {
+    const newScore = computeRiskScore(m, getFrameworkDimensionWeights())
+    const assessment = buildEntityAssessment(m)
+    if (newScore !== m.riskScore || m.maturityScore !== assessment.maturityScore ||
+      m.assessmentFrameworkId !== ASSESSMENT_FRAMEWORK.id || m.assessmentFrameworkVersion !== ASSESSMENT_FRAMEWORK.version) {
       m.riskScore = newScore
       m.riskLevel = riskLevel(newScore)
+      m.maturityScore = assessment.maturityScore
+      m.assessmentFrameworkId = ASSESSMENT_FRAMEWORK.id
+      m.assessmentFrameworkVersion = ASSESSMENT_FRAMEWORK.version
       await m.save()
     }
   }
@@ -673,14 +682,17 @@ export async function peerBenchmark(entityId: string) {
   const alertVolume = await Alert.countDocuments({ entityId })
   const invTime = (await Case.aggregate([{ $match: { entityId } }, { $group: { _id: null, v: { $avg: '$durationMin' } } }]))[0]?.v || 0
   const escRate = (await Alert.aggregate([{ $match: { entityId } }, { $group: { _id: null, r: { $avg: { $cond: [{ $ne: ['$escalationPath', null] }, 1, 0] } } } }]))[0]?.r || 0
+  const maturityScore = buildEntityAssessment(em).maturityScore ?? 0
 
   const pAlertVol = []
   const pInvTime = []
   const pEscRate = []
+  const pMaturity = []
   for (const p of peers) {
     pAlertVol.push(await Alert.countDocuments({ entityId: p.entityId }))
     pInvTime.push((await Case.aggregate([{ $match: { entityId: p.entityId } }, { $group: { _id: null, v: { $avg: '$durationMin' } } }]))[0]?.v || 0)
     pEscRate.push((await Alert.aggregate([{ $match: { entityId: p.entityId } }, { $group: { _id: null, r: { $avg: { $cond: [{ $ne: ['$escalationPath', null] }, 1, 0] } } } }]))[0]?.r || 0)
+    pMaturity.push(buildEntityAssessment(p).maturityScore ?? 0)
   }
 
   const mk = (metric: string, ev: number, display: string, pv: number[], pvDisplay: string, assess: (pct: number) => string) => {
@@ -699,7 +711,8 @@ export async function peerBenchmark(entityId: string) {
     mk('Investigation Duration', Math.round(invTime), `${Math.round(invTime)} min`, pInvTime, `${Math.round(median(pInvTime))} min`, assessInv),
     mk('Escalation Rate', +(escRate * 100).toFixed(1), `${(escRate * 100).toFixed(1)}%`, pEscRate.map(v => +(v * 100).toFixed(1)), `${(median(pEscRate) * 100).toFixed(1)}%`, assessInv),
     mk('Telemetry Coverage', e.telemetryCoverage, `${e.telemetryCoverage}%`, allEntities.filter(x => x.sector === e.sector && x.id !== entityId).map(x => x.telemetryCoverage), `${Math.round(median(otherEntityCoverage(allEntities, e.sector, entityId)))}%`, assessInv),
-    mk('Investigation Depth', em?.investigation ?? 0, String(em?.investigation ?? 0), peers.map(p => p.investigation ?? 0), String(Math.round(median(peers.map(p => p.investigation ?? 0)))), assessInv)
+    mk('Investigation Depth', em?.investigation ?? 0, String(em?.investigation ?? 0), peers.map(p => p.investigation ?? 0), String(Math.round(median(peers.map(p => p.investigation ?? 0)))), assessInv),
+    mk('SOC Maturity Score', maturityScore, `${maturityScore}/100`, pMaturity, `${Math.round(median(pMaturity))}/100`, assessNorm)
   ]
 }
 

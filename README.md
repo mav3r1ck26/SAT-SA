@@ -10,6 +10,14 @@ SAT-SA is a **supervisory analytics platform** that evaluates SOC operational ef
 
 > **Important**: SAT-SA is NOT a SOC, SIEM, real-time monitoring platform, or national cyber-monitoring platform. It evaluates SOC *efficiency*, not threat classification.
 
+### Standardized SOC assessment framework
+
+Entity capability is assessed with the versioned `SAT-SA-SOC` framework (v1.0.0), comprising eight dimensions with fixed weights. Dimension inputs use a normalized 0–100 scale, where higher indicates stronger capability. The overall maturity score is the weighted mean of the assessed dimension scores. It is shown separately from the supervisory risk score, which also accounts for execution gaps and negative-space indicators.
+
+Each dimension documents its purpose, expected operational evidence, and an informative crosswalk to relevant NIST Cybersecurity Framework (CSF) 2.0 outcomes. The crosswalk is not a claim of NIST certification or regulatory compliance; NIST CSF does not define SAT-SA's maturity score. The active catalog is available from `GET /api/assessment-framework` and is included with entity dossiers and assessment reports.
+
+Period-specific assessments are stored per entity and reporting period. The Entity Dossier follows the selected assessment period, offers numeric entry for all eight dimensions, and shows a longitudinal maturity trend with the underlying dimension scores. Seeded history is explicitly marked illustrative. To add missing illustrative prior-period points to an existing demo database without deleting data, run `npm run seed:assessment-history`.
+
 ---
 
 ## Architecture
@@ -99,10 +107,10 @@ cd ..
 
 ### 4. Start Development Servers
 ```bash
-# Start the Node API (port 3500) and React frontend (port 5173)
+# Start the Node API (port 3500), React frontend (port 5173), and Python ML API (port 8000)
 npm run dev:full
 
-# Optional: start the Python ML API in a separate terminal (port 8000)
+# If you run the services separately, start the ML API from ml-backend:
 cd ml-backend
 python -m src.api
 ```
@@ -144,6 +152,9 @@ python -m src.api
 | `/api/validation/summary` | GET | Validation metrics |
 | `/api/configuration/category/:category` | GET | Configuration values by category |
 | `/api/configuration/:key` | GET, PUT | Read or update a configuration value |
+| `/api/assessment-framework` | GET | Versioned dimensions, fixed weights, evidence expectations, and NIST CSF 2.0 crosswalk |
+| `/api/entities/:id/assessment-history` | GET | Stored maturity and dimension scores by reporting period |
+| `/api/entities/:id/assessment` | PUT | Save a complete set of normalized dimension scores for a reporting period |
 | `/api/ml/*` | * | ML proxy endpoints |
 
 ### Python/FastAPI ML API (Port 8000)
@@ -322,7 +333,7 @@ All thresholds and weights externalized in MongoDB `Configuration` collection:
 | **Viewer** | Read-only: dashboards, entity overview |
 
 ### Docker Development
-The checked-in Compose file starts MongoDB. Run `docker compose up -d mongodb`, then start the API and frontend with `npm run dev:full`.
+The checked-in Compose file starts MongoDB. Run `docker compose up -d mongodb`, then start the Node API, frontend, and Python ML API with `npm run dev:full`.
 
 ---
 
@@ -398,7 +409,7 @@ npm run preview      # Preview the primary frontend build
 # Node API
 npm run api          # Start Express server
 npm run api:watch    # Start with tsx watch (auto-reload)
-npm run dev:full     # Start the Node API and primary frontend together
+npm run dev:full     # Start the Node API, primary frontend, and ML inference API together
 npm run seed         # Seed MongoDB with synthetic data
 npm run seed:evidence # Link sample findings to their evidence records (safe to rerun)
 

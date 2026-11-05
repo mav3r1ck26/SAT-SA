@@ -3,6 +3,7 @@ import { Schema, model, InferSchemaType } from 'mongoose'
 export const entityMetricSchema = new Schema({
   entityId: { type: String, ref: 'Entity', required: true },
   period: { type: String, required: true, default: 'Q2 FY 2026-27' },
+  assessmentProvenance: { type: String, enum: ['submitted', 'sample'], default: 'submitted' },
 
   // 8 Core Supervisory Dimensions (0-100 scale, higher = healthier capability)
   threatDetection: { type: Number, default: 50, min: 0, max: 100 },
@@ -21,6 +22,9 @@ export const entityMetricSchema = new Schema({
   resilience: { type: Number, default: 50 },
 
   // Composite Supervisory Scores
+  assessmentFrameworkId: { type: String, default: 'SAT-SA-SOC' },
+  assessmentFrameworkVersion: { type: String, default: '1.0.0' },
+  maturityScore: { type: Number, default: null, min: 0, max: 100 },
   riskScore: { type: Number, default: 50, min: 0, max: 100 },
   prevRiskScore: { type: Number, default: 50 },
   riskLevel: { type: String, enum: ['Critical', 'High', 'Moderate', 'Low', 'Normal'], default: 'Normal' },

@@ -222,17 +222,18 @@ export function Heatmap({ rows, columns, data }: {
 }
 
 // ===== Line / Area Chart =====
-export function AreaChart({ data, series, height = 160, valueFormatter }: {
+export function AreaChart({ data, series, height = 160, valueFormatter, maxValue }: {
   data: any[]
   series: { key: string; label: string; color: string }[]
   height?: number
   valueFormatter?: (v: number) => string
+  maxValue?: number
 }) {
   const w = 480
   const h = height
   const pad = { top: 14, right: 12, bottom: 24, left: 40 }
   const allV = data.flatMap(d => series.map(s => d[s.key] ?? 0))
-  const max = Math.max(...allV, 1)
+  const max = maxValue ?? Math.max(...allV, 1)
   const innerW = w - pad.left - pad.right
   const innerH = h - pad.top - pad.bottom
   const stepX = data.length > 1 ? innerW / (data.length - 1) : innerW

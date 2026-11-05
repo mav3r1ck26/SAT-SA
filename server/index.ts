@@ -16,6 +16,7 @@ import evidenceRouter from './routes/evidence'
 import validationRouter from './routes/validation'
 import mlRouter from './routes/ml'
 import configurationRouter from './routes/configuration'
+import assessmentFrameworkRouter from './routes/assessmentFramework'
 
 const app = express()
 const PORT = process.env.API_PORT || 3500
@@ -50,6 +51,7 @@ app.use('/api/evidence', evidenceRouter)
 app.use('/api/validation', validationRouter)
 app.use('/api/ml', mlRouter)
 app.use('/api/configuration', configurationRouter)
+app.use('/api/assessment-framework', assessmentFrameworkRouter)
 
 // Start
 async function main() {

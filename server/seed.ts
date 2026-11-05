@@ -57,6 +57,29 @@ const alertCategories = ['Malware', 'Phishing', 'Network Anomaly', 'Access Anoma
 const assets = ['FW-GW-14', 'EDR-CSE-021', 'IDP-Primary', 'NSM-SEG-27', 'MAIL-GW-08', 'DB-REPLICA', 'AAA-HOST', 'FW-EDGE-02'] as const
 const severities = ['Critical', 'High', 'Medium', 'Low'] as const
 const investigators = ['Analyst-01', 'Analyst-02', 'Analyst-03', 'Analyst-04', 'Analyst-05'] as const
+const historicalAssessmentPeriods = [
+  { period: 'Q3 FY 2025-26', scoreDelta: -12 },
+  { period: 'Q4 FY 2025-26', scoreDelta: -8 },
+  { period: 'Q1 FY 2026-27', scoreDelta: -4 }
+] as const
+
+function historicalMetricValues(metrics: Record<string, any>, scoreDelta: number) {
+  const dimensionKeys = [
+    'threatDetection', 'investigation', 'escalation', 'incidentResponse',
+    'securityOperations', 'governanceOversight', 'operationalDiscipline', 'cyberResilience'
+  ]
+  const adjusted: Record<string, any> = {}
+  for (const key of dimensionKeys) {
+    const value = metrics[key]
+    if (typeof value === 'number') adjusted[key] = Math.max(0, Math.min(100, value + scoreDelta))
+  }
+  const currentRisk = typeof metrics.riskScore === 'number' ? metrics.riskScore : 50
+  adjusted.riskScore = Math.max(0, Math.min(100, Math.round(currentRisk - scoreDelta * 0.55)))
+  adjusted.prevRiskScore = Math.max(0, adjusted.riskScore - 3)
+  adjusted.executionGapCount = Math.max(0, (metrics.executionGapCount || 0) + Math.round(Math.abs(scoreDelta) / 4))
+  adjusted.negativeSpaceCount = Math.max(0, (metrics.negativeSpaceCount || 0) + Math.round(Math.abs(scoreDelta) / 8))
+  return adjusted
+}
 
 function rand(min: number, max: number) { return Math.floor(Math.random() * (max - min + 1)) + min }
 function daysAgoDate(days: number, hourOffset = 0) {
@@ -88,7 +111,16 @@ async function seed() {
       lastSubmission: daysAgoDate(rand(1, 4)).toISOString(),
       assessmentStatus: e.metrics.priority === 'Critical' || e.metrics.priority === 'High' ? 'Review Required' : e.metrics.priority === 'Moderate' ? 'Monitor' : 'Compliant'
     })
-    await EntityMetric.create({ entityId: e.id, period: 'Q2 FY 2026-27', ...e.metrics })
+    for (const snapshot of historicalAssessmentPeriods) {
+      await EntityMetric.create({
+        entityId: e.id,
+        period: snapshot.period,
+        ...e.metrics,
+        ...historicalMetricValues(e.metrics as Record<string, any>, snapshot.scoreDelta),
+        assessmentProvenance: 'sample'
+      })
+    }
+    await EntityMetric.create({ entityId: e.id, period: 'Q2 FY 2026-27', ...e.metrics, assessmentProvenance: 'sample' })
   }
 
   // ---- Telemetry ----

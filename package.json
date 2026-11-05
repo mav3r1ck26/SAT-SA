@@ -7,12 +7,14 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
+    "ml:api": "cd ml-backend && python -m src.api",
     "api": "tsx server/index.ts",
     "api:watch": "tsx watch server/index.ts",
     "seed": "tsx server/seed.ts",
+    "seed:assessment-history": "tsx server/seedAssessmentHistory.ts",
     "seed:evidence": "tsx server/link-sample-evidence.ts",
     "seed:review-samples": "tsx server/seed-review-samples.ts",
-    "dev:full": "concurrently -k \"tsx watch server/index.ts\" \"vite\"",
+    "dev:full": "concurrently -k \"tsx watch server/index.ts\" \"vite\" \"npm run ml:api\"",
     "build:server": "tsc -p server/tsconfig.json"
   },
   "dependencies": {

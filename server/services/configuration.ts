@@ -1,4 +1,5 @@
 import { Configuration } from '../models/Configuration'
+import { getFrameworkDimensionWeights } from './assessmentFramework'
 
 const DEFAULT_CONFIGS = [
   // Execution Gap Thresholds
@@ -163,28 +164,11 @@ const DEFAULT_CONFIGS = [
   {
     key: 'dimensionWeights',
     category: 'weights',
-    value: {
-      threatDetection: 0.20,
-      investigation: 0.20,
-      escalation: 0.15,
-      incidentResponse: 0.15,
-      securityOperations: 0.10,
-      governanceOversight: 0.10,
-      operationalDiscipline: 0.05,
-      cyberResilience: 0.05
-    },
-    defaultValue: {
-      threatDetection: 0.20,
-      investigation: 0.20,
-      escalation: 0.15,
-      incidentResponse: 0.15,
-      securityOperations: 0.10,
-      governanceOversight: 0.10,
-      operationalDiscipline: 0.05,
-      cyberResilience: 0.05
-    },
-    description: 'Weights for 8-dimension scoring model',
-    dataType: 'object'
+    value: getFrameworkDimensionWeights(),
+    defaultValue: getFrameworkDimensionWeights(),
+    description: 'Locked weights defined by SAT-SA-SOC assessment framework version 1.0.0',
+    dataType: 'object',
+    isEditable: false
   },
 
   // ML Configuration
@@ -394,25 +378,52 @@ const DEFAULT_CONFIGS = [
 
 export async function initializeConfiguration(): Promise<void> {
   for (const config of DEFAULT_CONFIGS) {
-    await Configuration.findOneAndUpdate(
-      { key: config.key },
-      { $setOnInsert: config },
-      { upsert: true, new: true }
-    )
+    if (config.key === 'dimensionWeights') {
+      await Configuration.findOneAndUpdate(
+        { key: config.key },
+        { $set: config },
+        { upsert: true, new: true }
+      )
+    } else {
+      await Configuration.findOneAndUpdate(
+        { key: config.key },
+        { $setOnInsert: config },
+        { upsert: true, new: true }
+      )
+    }
   }
   console.log('Default configurations initialized')
 }
 
 export async function getConfig<T>(key: string): Promise<T | null> {
+  if (key === 'dimensionWeights') return getFrameworkDimensionWeights() as unknown as T
   const config = await Configuration.findOne({ key })
   return config ? config.value as T : null
 }
 
+function exposeCanonicalFrameworkWeights(config: any) {
+  if (config.key !== 'dimensionWeights') return config
+  return {
+    ...config,
+    value: getFrameworkDimensionWeights(),
+    defaultValue: getFrameworkDimensionWeights(),
+    description: 'Locked weights defined by SAT-SA-SOC assessment framework version 1.0.0',
+    isEditable: false
+  }
+}
+
 export async function getConfigCategory(category: string) {
-  return Configuration.find({ category: category as any }).lean()
+  const configs = await Configuration.find({ category: category as any }).lean()
+  return configs.map(exposeCanonicalFrameworkWeights)
 }
 
 export async function setConfig(key: string, value: any, modifiedBy: string): Promise<void> {
+  const existing = await Configuration.findOne({ key })
+  if (key === 'dimensionWeights' || (existing && !existing.isEditable)) {
+    const error = new Error('This configuration is locked by the active assessment framework') as Error & { statusCode: number }
+    error.statusCode = 409
+    throw error
+  }
   await Configuration.findOneAndUpdate(
     { key },
     { value, lastModifiedBy: modifiedBy, lastModifiedAt: new Date() },
@@ -421,5 +432,6 @@ export async function setConfig(key: string, value: any, modifiedBy: string): Pr
 }
 
 export async function getAllConfigs() {
-  return Configuration.find().lean()
+  const configs = await Configuration.find().lean()
+  return configs.map(exposeCanonicalFrameworkWeights)
 }

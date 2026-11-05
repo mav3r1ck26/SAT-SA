@@ -5,7 +5,7 @@ import { StatusBadge, RiskScoreBar, TelemetryPulse } from '../components/ui'
 import { Search, Download, Shield, Filter, ArrowUpDown, ChevronRight } from 'lucide-react'
 
 export default function EntitiesList() {
-  const { setCurrentPage, setSelectedEntity } = useApp()
+  const { setCurrentPage, setSelectedEntity, assessmentPeriod } = useApp()
   const [entities, setEntities] = useState<any[]>([])
   const [search, setSearch] = useState('')
   const [sectorFilter, setSectorFilter] = useState('')
@@ -14,8 +14,8 @@ export default function EntitiesList() {
   const [sortAsc, setSortAsc] = useState(false)
 
   useEffect(() => {
-    fetchEntities().then(setEntities).catch(() => setEntities([]))
-  }, [])
+    fetchEntities({ period: assessmentPeriod }).then(setEntities).catch(() => setEntities([]))
+  }, [assessmentPeriod])
 
   const openEntity = (id: string) => { 
     setSelectedEntity(id)
@@ -48,6 +48,7 @@ export default function EntitiesList() {
     { key: 'sector', label: 'Critical Sector' },
     { key: 'criticality', label: 'Supervisory Tier' }, 
     { key: 'riskScore', label: 'Risk Score (0-100)' },
+    { key: 'maturityScore', label: 'SOC Maturity (0-100)' },
     { key: 'dataCompleteness', label: 'Data Fidelity' },
     { key: 'executionGaps', label: 'Gaps' }, 
     { key: 'negativeSpace', label: 'Blind Spots' },
@@ -62,13 +63,15 @@ export default function EntitiesList() {
 
   // Functional CSV export
   const exportFleetCSV = () => {
-    const headers = ['Entity ID', 'Legal Name', 'Sector', 'Criticality', 'Risk Score', 'Data Fidelity %', 'Execution Gaps', 'Blind Spots', 'Priority', 'Audit Status']
+    const headers = ['Entity ID', 'Legal Name', 'Sector', 'Criticality', 'Risk Score', 'SOC Maturity Score', 'Framework Version', 'Data Fidelity %', 'Execution Gaps', 'Blind Spots', 'Priority', 'Audit Status']
     const rows = filtered.map(e => [
       e.id,
       `"${e.name}"`,
       e.sector,
       e.criticality,
       e.riskScore ?? e.metrics?.riskScore ?? 0,
+      e.maturityScore ?? '',
+      `${e.assessmentFrameworkId || 'SAT-SA-SOC'} v${e.assessmentFrameworkVersion || '1.0.0'}`,
       e.dataCompleteness ?? 0,
       e.executionGaps ?? 0,
       e.negativeSpace ?? 0,
@@ -211,6 +214,9 @@ export default function EntitiesList() {
                     <td className="min-w-[150px]">
                       <RiskScoreBar score={score} showLabel />
                     </td>
+                    <td className="font-mono text-xs text-indigo-700 font-semibold" title={`${e.assessmentFrameworkId || 'SAT-SA-SOC'} v${e.assessmentFrameworkVersion || '1.0.0'}`}>
+                      {e.maturityScore == null ? '—' : `${e.maturityScore} / 100`}
+                    </td>
                     <td>
                       <div className="flex items-center gap-2">
                         <div className="w-16 h-1.5 rounded-full bg-slate-200 overflow-hidden">
@@ -240,7 +246,7 @@ export default function EntitiesList() {
               })}
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={11} className="text-center py-10 text-xs text-slate-400 font-mono">
+                  <td colSpan={12} className="text-center py-10 text-xs text-slate-400 font-mono">
                     No matching critical sector entities found. Try adjusting your search query or filters.
                   </td>
                 </tr>

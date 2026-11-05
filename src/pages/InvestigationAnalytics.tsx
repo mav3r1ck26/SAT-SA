@@ -23,6 +23,13 @@ export default function InvestigationAnalytics() {
   const behaviour = data?.behaviour ?? []
   const totalCases = kpis.totalCases ?? 32481
 
+  const patternExplanations: Record<string, string> = {
+    'Superficial': 'No investigation depth is recorded for these cases. Check notes, actions, and attachments; work performed outside the recorded system may be missing.',
+    'Repeated investigation templates': 'Investigation narratives are flagged as highly similar. Recurring incident types can legitimately produce similar notes, so review the underlying cases.',
+    'Unusually Fast': 'The recorded closure time is classified as unusually short. Compare the timeline with case severity and complexity; speed alone does not show inadequate work.',
+    'Requires Review': 'These cases have a stored manual-review flag. This panel does not show the individual trigger, so inspect case details before reaching a conclusion.'
+  }
+
   const handleExport = () => {
     const headers = ['Metric', 'Value']
     const rows = [
@@ -100,20 +107,35 @@ export default function InvestigationAnalytics() {
             <span className="text-slate-700 font-bold">Repetitive Closure & Rubber-Stamp Patterns</span>
             <span className="badge badge-warning text-xs font-mono">SUPERVISORY ANOMALY</span>
           </div>
+          <p className="text-[11px] text-slate-500 leading-relaxed rounded-md border border-indigo-100 bg-indigo-50/50 p-3">
+            Counts are case records in each stored behavior group, shown as a share of all cases. Severity is a category priority: Critical = Requires Review; High = Superficial or Repetitive; Medium = Unusually Fast. These are screening signals, not proof of misconduct—check the timeline, notes, and evidence before drawing conclusions.
+          </p>
           <div className="space-y-2.5 mt-2">
             {patterns.map((p: any, i: number) => (
-              <div key={i} className="flex flex-wrap items-center justify-between p-3 rounded-lg bg-slate-50/70 border border-slate-200 gap-2">
-                <span className={`badge border text-[10px] font-mono ${
-                  p.severity === 'Critical' 
-                    ? 'bg-rose-50/80 text-rose-700 border-rose-200/60' 
-                    : p.severity === 'High' 
-                    ? 'bg-orange-50/80 text-orange-700 border-orange-200/60' 
-                    : 'bg-amber-50/80 text-amber-700 border-amber-200/60'
-                }`}>
-                  {p.severity}
-                </span>
-                <span className="text-xs font-medium text-slate-800 flex-1 truncate">{p.pattern}</span>
-                <span className="font-mono text-xs font-bold text-indigo-600">{(p.count ?? 0).toLocaleString()} cases</span>
+              <div key={i} className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3 p-3 rounded-lg bg-slate-50/70 border border-slate-200">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className={`badge border text-[10px] font-mono ${
+                      p.severity === 'Critical'
+                        ? 'bg-rose-50/80 text-rose-700 border-rose-200/60'
+                        : p.severity === 'High'
+                        ? 'bg-orange-50/80 text-orange-700 border-orange-200/60'
+                        : 'bg-amber-50/80 text-amber-700 border-amber-200/60'
+                    }`}>
+                      {p.severity}
+                    </span>
+                    <span className="text-xs font-medium text-slate-800">{p.pattern}</span>
+                  </div>
+                  <p className="text-[11px] text-slate-500 leading-relaxed mt-1.5">
+                    {patternExplanations[p.pattern] || 'A case behavior group that signals a possible investigation-quality concern; review the underlying records.'}
+                  </p>
+                </div>
+                <div className="text-right whitespace-nowrap">
+                  <div className="font-mono text-xs font-bold text-indigo-600">{(p.count ?? 0).toLocaleString()} cases</div>
+                  <div className="font-mono text-[10px] text-slate-500 mt-1">
+                    {(((p.count ?? 0) / (totalCases || 1)) * 100).toFixed(1)}% of {totalCases.toLocaleString()}
+                  </div>
+                </div>
               </div>
             ))}
           </div>
@@ -209,7 +231,7 @@ export default function InvestigationAnalytics() {
       <div className="card p-5">
         <div className="label mb-2 text-slate-700 font-bold">Investigation Behavioral Stratification</div>
         <p className="text-xs text-slate-500 mb-4 font-mono">
-          Machine-learning clustering of entire case portfolio against standard forensic investigation heuristics
+          Summary of behavior labels stored on case records. This view counts those labels; it does not independently run a machine-learning clustering model.
         </p>
 
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">

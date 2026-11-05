@@ -71,7 +71,7 @@ export function printDossier(title: string, sections: { heading: string; content
   }
   const renderCell = (value: any): string => {
     if (value === null || value === undefined || value === '') return '<span class="muted">—</span>'
-    if (typeof value === 'object') return `<code>${escapeHtml(JSON.stringify(value))}</code>`
+    if (typeof value === 'object') return renderValue(value)
     return escapeHtml(value)
   }
 

@@ -91,7 +91,7 @@ export function RiskScoreBar({ score, showLabel }: { score: number; showLabel?: 
 }
 
 export function RiskScoreGauge({ score }: { score: number }) {
-  const label = score >= 85 ? 'CRITICAL SUPERVISORY ATTENTION' : score >= 70 ? 'HIGH SUPERVISORY ATTENTION' : score >= 55 ? 'MODERATE ATTENTION' : score >= 40 ? 'LOW ATTENTION' : 'NORMAL COMPLIANT'
+  const label = score >= 85 ? 'CRITICAL SUPERVISORY ATTENTION' : score >= 70 ? 'HIGH SUPERVISORY ATTENTION' : score >= 55 ? 'MODERATE ATTENTION' : score >= 40 ? 'LOW ATTENTION' : 'NORMAL RISK'
   const color = score >= 85 ? 'text-rose-600' : score >= 70 ? 'text-orange-600' : score >= 55 ? 'text-amber-600' : score >= 40 ? 'text-indigo-600' : 'text-emerald-600'
   const ringColor = score >= 85 ? '#f43f5e' : score >= 70 ? '#f97316' : score >= 55 ? '#f59e0b' : score >= 40 ? '#4f46e5' : '#10b981'
 
@@ -121,7 +121,7 @@ export function RiskScoreGauge({ score }: { score: number }) {
           <span className={`text-[12px] font-bold tracking-wider font-mono ${color}`}>{label}</span>
         </div>
         <p className="text-[11.5px] text-slate-500 leading-relaxed max-w-[240px]">
-          Composite SOC effectiveness metric derived from ML evaluation of detection, investigation, and escalation logs.
+          Higher values indicate greater supervisory risk and need for review. This is separate from the SOC maturity score.
         </p>
       </div>
     </div>

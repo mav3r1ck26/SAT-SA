@@ -1,8 +1,18 @@
-import React from 'react'
-import { ShieldCheck, Database, Lock, FileText, AlertTriangle, Cpu, Terminal, KeyRound, Server } from 'lucide-react'
+import React, { useEffect, useState } from 'react'
+import { ShieldCheck, Database, Lock, FileText, AlertTriangle, Cpu, Terminal, KeyRound, Server, BookOpen } from 'lucide-react'
 import { TelemetryPulse } from '../components/ui'
+import { fetchAssessmentFramework } from '../api/client'
 
 export default function Settings() {
+  const [framework, setFramework] = useState<any>(null)
+  const [frameworkError, setFrameworkError] = useState('')
+
+  useEffect(() => {
+    fetchAssessmentFramework().then(setFramework).catch(error => {
+      setFrameworkError(error instanceof Error ? error.message : 'Assessment framework could not be loaded')
+    })
+  }, [])
+
   return (
     <div className="p-6 max-w-[1400px] mx-auto space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200 pb-4">
@@ -18,6 +28,67 @@ export default function Settings() {
       </div>
 
       <div className="space-y-5">
+        <div className="card p-5 space-y-4">
+          <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-200 pb-3">
+            <div>
+              <div className="flex items-center gap-2 text-slate-800 font-bold">
+                <BookOpen className="w-4 h-4 text-indigo-600" /> Standardized SOC Assessment Framework
+              </div>
+              <p className="text-xs text-slate-500 mt-1">Versioned assessment dimensions and evidence expectations used for consistent entity scoring.</p>
+            </div>
+            {framework && <span className="badge badge-info font-mono">{framework.id} v{framework.version}</span>}
+          </div>
+
+          {frameworkError ? (
+            <p className="text-xs text-rose-600">{frameworkError}</p>
+          ) : !framework ? (
+            <p className="text-xs text-slate-500">Loading assessment framework…</p>
+          ) : (
+            <>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 text-xs">
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-1.5">
+                  <div className="font-semibold text-slate-800">Maturity calculation</div>
+                  <p className="text-slate-600">{framework.maturityFormula}</p>
+                  <p className="text-slate-500">{framework.dimensionScoreDefinition}</p>
+                </div>
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-1.5">
+                  <div className="font-semibold text-slate-800">NIST CSF 2.0 reference</div>
+                  {framework.references?.map((reference: any) => (
+                    <a key={reference.id} href={reference.url} target="_blank" rel="noreferrer" className="text-indigo-700 underline underline-offset-2">
+                      {reference.title} ({reference.publisher}, {reference.year})
+                    </a>
+                  ))}
+                  <p className="text-slate-500">{framework.alignmentNotice}</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
+                {framework.dimensions?.map((dimension: any) => (
+                  <div key={dimension.key} className="rounded-lg border border-slate-200 bg-white p-3 space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="text-xs font-bold text-slate-800">{dimension.label}</div>
+                      <span className="text-[10px] font-mono text-indigo-700">{dimension.weightPercent ?? Math.round(dimension.weight * 100)}% weight</span>
+                    </div>
+                    <p className="text-xs text-slate-600">{dimension.purpose}</p>
+                    <div className="text-[10px] font-mono text-slate-500">Input: {dimension.inputMetric}</div>
+                    <div className="flex flex-wrap gap-1">
+                      {dimension.nistCsf?.map((reference: any) => (
+                        <span key={reference.id} title={reference.name} className="px-1.5 py-0.5 rounded bg-indigo-50 border border-indigo-100 text-[10px] font-mono text-indigo-700">
+                          {reference.id}
+                        </span>
+                      ))}
+                    </div>
+                    <div className="text-[10px] text-slate-500">Evidence: {dimension.evidenceIndicators?.join(' · ')}</div>
+                  </div>
+                ))}
+              </div>
+              <div className="rounded-lg border border-amber-200 bg-amber-50/60 p-3 text-xs text-amber-900">
+                <strong>Risk and maturity are separate measures.</strong> {framework.riskScoreDefinition}
+              </div>
+            </>
+          )}
+        </div>
+
         {/* System Information Card */}
         <div className="card p-5">
           <div className="label mb-4 flex items-center justify-between">
