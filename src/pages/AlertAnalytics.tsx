@@ -1,30 +1,40 @@
-import React, { useEffect, useState } from 'react'
+import React from 'react'
 import { MultiBar, BarChart, Donut } from '../components/charts'
 import StatCard from '../components/StatCard'
 import { TelemetryPulse } from '../components/ui'
 import { fetchAlertAnalytics } from '../api/client'
 import { downloadCSV } from '../utils/export'
+import { useApp } from '../context/AppContext'
 import { Bell, Download, Filter, Flame, Clock, Layers, ArrowUpRight } from 'lucide-react'
+import { useEntityScope } from '../hooks/useEntityScope'
+import { useApiResource } from '../hooks/useApiResource'
+import RequestState from '../components/RequestState'
 
 export default function AlertAnalytics() {
-  const [data, setData] = useState<any>(null)
+  const { assessmentPeriod } = useApp()
+  const entityId = useEntityScope()
+  const resource = useApiResource(
+    `alert-analytics:${assessmentPeriod}:${entityId || 'ALL'}`,
+    signal => fetchAlertAnalytics(assessmentPeriod, entityId, signal)
+  )
+  const data = resource.data
 
-  useEffect(() => {
-    fetchAlertAnalytics().then(setData).catch(() => {})
-  }, [])
+  if (resource.loading || resource.error || !data) {
+    return <RequestState loading={resource.loading} error={resource.error} retry={resource.retry} retryInSeconds={resource.retryInSeconds} loadingMessage="Loading alert analytics…" />
+  }
 
-  const totalAlerts = data?.kpis?.totalAlerts ?? 184620
-  const ackTime = data?.kpis?.meanAckTime ?? '4.2 min'
-  const closureTime = data?.kpis?.meanClosure ?? '58.3 min'
-  const conversion = data?.kpis?.alertToCase ?? '11.2%'
-  const criticalClosures = data?.kpis?.criticalClosures ?? 214
-  const volumeByMonth = data?.volumeByMonth ?? []
-  const severityDistribution = data?.severityDistribution ?? []
-  const disposition = data?.disposition ?? []
-  const lifecycle = data?.lifecycle ?? []
-  const conversionData = data?.conversion ?? []
-  const repeatAlerts = data?.repeatAlerts ?? []
-  const criticalClosure = data?.criticalClosure ?? []
+  const totalAlerts = data.kpis.totalAlerts
+  const ackTime = data.kpis.meanAckTime
+  const closureTime = data.kpis.meanClosure
+  const conversion = data.kpis.alertToCase
+  const criticalClosures = data.kpis.criticalClosures
+  const volumeByMonth = data.volumeByMonth
+  const severityDistribution = data.severityDistribution
+  const disposition = data.disposition
+  const lifecycle = data.lifecycle
+  const conversionData = data.conversion
+  const repeatAlerts = data.repeatAlerts
+  const criticalClosure = data.criticalClosure
 
   const handleExport = () => {
     const headers = ['Metric', 'Value']
@@ -57,13 +67,15 @@ export default function AlertAnalytics() {
         </div>
       </div>
 
+      {totalAlerts === 0 && <div role="status" className="rounded border border-slate-200 bg-white p-3 text-sm text-slate-500">No alert records for the selected entity and assessment period.</div>}
+
       {/* 5 KPI StatCards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3.5">
-        <StatCard label="Total Ingested Alerts" value={typeof totalAlerts === 'number' ? totalAlerts.toLocaleString() : totalAlerts} trend={14} icon="alerts" accent="neutral" />
-        <StatCard label="Mean Ack Latency" value={ackTime} trend={-8} icon="gap" accent="info" />
-        <StatCard label="Mean Closure Duration" value={closureTime} trend={6} icon="cases" accent="neutral" />
-        <StatCard label="Alert-to-Case Escalation" value={conversion} trend={-3} icon="samples" accent="neutral" />
-        <StatCard label="Premature Critical Closures" value={String(criticalClosures)} trend={22} icon="alert" accent="danger" />
+        <StatCard label="Total Ingested Alerts" value={typeof totalAlerts === 'number' ? totalAlerts.toLocaleString() : totalAlerts} icon="alerts" accent="neutral" />
+        <StatCard label="Mean Ack Latency" value={ackTime} icon="gap" accent="info" />
+        <StatCard label="Mean Closure Duration" value={closureTime} icon="cases" accent="neutral" />
+        <StatCard label="Alert-to-Case Escalation" value={conversion} icon="samples" accent="neutral" />
+        <StatCard label="Premature Critical Closures" value={String(criticalClosures)} icon="alert" accent="danger" />
       </div>
 
       {/* Alert Volume + Severity Donut */}

@@ -6,10 +6,8 @@ import { TelemetryCoverage } from '../models/TelemetryCoverage'
 import { Finding } from '../models/Finding'
 import { EvidenceEvent } from '../models/EvidenceEvent'
 import { AuditLog } from '../models/AuditLog'
-import { getConfig, getConfigCategory } from './configuration'
+import { getConfig, getConfigurationRevision } from './configuration'
 import { ASSESSMENT_FRAMEWORK, buildEntityAssessment, getFrameworkDimensionWeights } from './assessmentFramework'
-
-const PERIOD = 'Q2 FY 2026-27'
 
 interface ConfigValues {
   rapidClosurePercentile: number
@@ -36,9 +34,11 @@ interface ConfigValues {
 }
 
 let configCache: ConfigValues | null = null
+let configCacheRevision = -1
 
 async function loadConfig(): Promise<ConfigValues> {
-  if (configCache) return configCache
+  const revision = getConfigurationRevision()
+  if (configCache && configCacheRevision === revision) return configCache
   const configs = await Promise.all([
     getConfig('rapidClosurePercentile'),
     getConfig('criticalNoEscalationThreshold'),
@@ -71,6 +71,7 @@ async function loadConfig(): Promise<ConfigValues> {
     'anomalyPercentileLow', 'anomalyPercentileHigh', 'mlEnabled', 'mlRiskThreshold', 'mlConfidenceThreshold'
   ]
   configCache = Object.fromEntries(keys.map((k, i) => [k, configs[i]])) as unknown as ConfigValues
+  configCacheRevision = revision
   return configCache
 }
 
@@ -105,26 +106,30 @@ function iqrOutliers(arr: number[], mult = 1.5): number[] {
   return sorted.filter(v => v < lower || v > upper)
 }
 
-async function peerStats(sector?: string) {
+async function peerStats(period: string, sector?: string) {
   const filter = sector ? { sector } : {}
-  const metrics = await EntityMetric.find({ period: PERIOD }).lean()
+  const metrics = await EntityMetric.find({ period }).lean()
   const entities = await Entity.find(filter).lean()
   const entityIds = new Set(entities.map(e => e.id))
   const g = metrics.filter(m => entityIds.has(m.entityId))
   if (g.length === 0) return null
+  const numericMedian = (values: Array<number | null | undefined>) => {
+    const finite = values.filter((value): value is number => typeof value === 'number' && Number.isFinite(value))
+    return finite.length ? median(finite) : null
+  }
   return {
     count: g.length,
-    riskMedian: median(g.map(m => m.riskScore)),
-    threatDetectionMedian: median(g.map(m => m.threatDetection ?? 0)),
-    investigationMedian: median(g.map(m => m.investigation ?? 0)),
-    escalationMedian: median(g.map(m => m.escalation ?? 0)),
-    incidentResponseMedian: median(g.map(m => m.incidentResponse ?? 0)),
-    securityOperationsMedian: median(g.map(m => m.securityOperations ?? 0)),
-    governanceOversightMedian: median(g.map(m => m.governanceOversight ?? 0)),
-    operationalDisciplineMedian: median(g.map(m => m.operationalDiscipline ?? 0)),
-    cyberResilienceMedian: median(g.map(m => m.cyberResilience ?? 0)),
-    execGapsMedian: median(g.map(m => m.executionGapCount ?? 0)),
-    negSpaceMedian: median(g.map(m => m.negativeSpaceCount ?? 0))
+    riskMedian: numericMedian(g.map(m => m.riskScore)),
+    threatDetectionMedian: numericMedian(g.map(m => m.threatDetection)),
+    investigationMedian: numericMedian(g.map(m => m.investigation)),
+    escalationMedian: numericMedian(g.map(m => m.escalation)),
+    incidentResponseMedian: numericMedian(g.map(m => m.incidentResponse)),
+    securityOperationsMedian: numericMedian(g.map(m => m.securityOperations)),
+    governanceOversightMedian: numericMedian(g.map(m => m.governanceOversight)),
+    operationalDisciplineMedian: numericMedian(g.map(m => m.operationalDiscipline)),
+    cyberResilienceMedian: numericMedian(g.map(m => m.cyberResilience)),
+    execGapsMedian: numericMedian(g.map(m => m.executionGapCount)),
+    negSpaceMedian: numericMedian(g.map(m => m.negativeSpaceCount))
   }
 }
 
@@ -135,10 +140,11 @@ function percentileRank(value: number, population: number[]): number {
   return Math.round(((below + equal / 2) / population.length) * 100)
 }
 
-export async function recomputeEntityRisk(entityId: string) {
-  const metric = await EntityMetric.findOne({ entityId, period: PERIOD })
+export async function recomputeEntityRisk(entityId: string, period: string) {
+  const metric = await EntityMetric.findOne({ entityId, period })
   if (!metric) return null
-  const newScore = computeRiskScore(metric, getFrameworkDimensionWeights())
+  const newScore = computeRiskScore(metric, getFrameworkDimensionWeights(), (await loadConfig()).riskWeights)
+  if (newScore === null) return null
   const assessment = buildEntityAssessment(metric)
   const needsSave = newScore !== metric.riskScore || metric.maturityScore !== assessment.maturityScore ||
     metric.assessmentFrameworkId !== ASSESSMENT_FRAMEWORK.id || metric.assessmentFrameworkVersion !== ASSESSMENT_FRAMEWORK.version
@@ -153,10 +159,12 @@ export async function recomputeEntityRisk(entityId: string) {
   return newScore
 }
 
-export async function recomputeAllRisks() {
-  const metrics = await EntityMetric.find({ period: PERIOD })
+export async function recomputeAllRisks(period: string) {
+  const config = await loadConfig()
+  const metrics = await EntityMetric.find({ period })
   for (const m of metrics) {
-    const newScore = computeRiskScore(m, getFrameworkDimensionWeights())
+    const newScore = computeRiskScore(m, getFrameworkDimensionWeights(), config.riskWeights)
+    if (newScore === null) continue
     const assessment = buildEntityAssessment(m)
     if (newScore !== m.riskScore || m.maturityScore !== assessment.maturityScore ||
       m.assessmentFrameworkId !== ASSESSMENT_FRAMEWORK.id || m.assessmentFrameworkVersion !== ASSESSMENT_FRAMEWORK.version) {
@@ -170,24 +178,45 @@ export async function recomputeAllRisks() {
   }
 }
 
-function computeRiskScore(metrics: any, weights: Record<string, number>): number {
+function computeRiskScore(metrics: any, dimensionWeights: Record<string, number>, riskWeights: Record<string, number>): number | null {
   const dims: Record<string, number> = {
-    threatDetection: metrics.threatDetection ?? 50,
-    investigation: metrics.investigation ?? 50,
-    escalation: metrics.escalation ?? 50,
-    incidentResponse: metrics.incidentResponse ?? 50,
-    securityOperations: metrics.securityOperations ?? 50,
-    governanceOversight: metrics.governanceOversight ?? 50,
-    operationalDiscipline: metrics.operationalDiscipline ?? 50,
-    cyberResilience: metrics.cyberResilience ?? 50
+    threatDetection: metrics.threatDetection,
+    investigation: metrics.investigation,
+    escalation: metrics.escalation,
+    incidentResponse: metrics.incidentResponse,
+    securityOperations: metrics.securityOperations,
+    governanceOversight: metrics.governanceOversight,
+    operationalDiscipline: metrics.operationalDiscipline,
+    cyberResilience: metrics.cyberResilience
   }
-  let score = 0
-  for (const k of Object.keys(weights) as (keyof typeof weights)[]) {
-    score += (100 - (dims[k] ?? 50)) * weights[k]
+  if (Object.values(dims).some(value => !Number.isFinite(value))) return null
+  const dimensionWeightTotal = Object.values(dimensionWeights).reduce((total, weight) => total + weight, 0)
+  if (dimensionWeightTotal <= 0) return null
+  const dimensionRisk = Object.entries(dimensionWeights).reduce((score, [key, weight]) => {
+    const dimension = dims[key]
+    return score + (100 - dimension) * weight
+  }, 0) / dimensionWeightTotal
+
+  const peerRisk: Record<string, number> = {
+    'Significantly Below': 100,
+    Below: 70,
+    'In Range': 30,
+    Above: 15,
+    'Significantly Above': 0
   }
-  score += (metrics.executionGapCount ?? 0) * 2
-  score += (metrics.negativeSpaceCount ?? 0) * 1.5
-  return Math.min(99, Math.max(5, Math.round(score)))
+  const components: Record<string, number | undefined> = {
+    executionGaps: metrics.executionGapCount == null ? undefined : Math.min(100, metrics.executionGapCount * 10),
+    negativeSpace: metrics.negativeSpaceCount == null ? undefined : Math.min(100, metrics.negativeSpaceCount * 10),
+    peerDeviation: peerRisk[metrics.peerDeviation],
+    mlRiskProbability: metrics.scoreComponents?.mlRiskProbability,
+    anomalyIndicators: metrics.anomalyCount == null ? undefined : Math.min(100, metrics.anomalyCount * 10),
+    dataQuality: metrics.dataQualityIssues == null ? undefined : Math.max(0, 100 - metrics.dataQualityIssues * 10)
+  }
+  let adjustment = 0
+  for (const [key, value] of Object.entries(components)) {
+    if (value !== undefined && Number.isFinite(value)) adjustment += (value - 50) * (riskWeights[key] ?? 0)
+  }
+  return Math.min(99, Math.max(0, Math.round(dimensionRisk + adjustment)))
 }
 
 type RiskLevel = 'Critical' | 'High' | 'Moderate' | 'Low' | 'Normal'
@@ -260,7 +289,7 @@ function anomalyScorePercentile(value: number, population: number[], low = 5, hi
 // ============================================================
 // EXECUTION GAP DETECTION
 // ============================================================
-export async function detectExecutionGaps(entityId?: string) {
+export async function detectExecutionGaps(period: string, entityId?: string) {
   const config = await loadConfig()
   const filter: any = {}
   if (entityId) filter.entityId = entityId
@@ -268,89 +297,105 @@ export async function detectExecutionGaps(entityId?: string) {
   const gaps: any[] = []
 
   for (const eid of entities) {
-    const cases = await Case.find({ entityId: eid }).lean()
+    const cases = await Case.find({ entityId: eid, period }).lean()
     const total = cases.length
-    if (!total) continue
 
     const fast = cases.filter(c => c.behaviour === 'Unusually Fast' || c.behaviour === 'Requires Review').length
     const template = cases.filter(c => c.isTemplateReuse === 1).length
     const zeroDepth = cases.filter(c => c.investigationDepth === 0).length
 
-    const alerts = await Alert.find({ entityId: eid, severity: 'Critical' }).lean()
+    if (total > 0) {
+      // Rapid closure - percentile-based
+      const durations = cases.map(c => c.durationMin).filter(d => d != null) as number[]
+      const fastPct = durations.length ? percentile(durations, config.rapidClosurePercentile) : 0
+      const fastCases = cases.filter(c => (c.durationMin ?? 9999) <= fastPct).length
+
+      if (fastCases > 0 && fastCases / total > 0.1) {
+        const ratio = fastCases / total
+        const supportingCases = cases
+          .filter(c => (c.durationMin ?? 9999) <= fastPct)
+          .map(c => c.id)
+          .slice(0, 100)
+        gaps.push({
+          findingType: 'EXECUTION_GAP',
+          period,
+          title: 'Rapid Closure Without Investigation',
+          entityId: eid,
+          controlArea: 'Investigation',
+          severity: ratio > 0.4 ? 'Critical' : 'High',
+          confidence: Math.min(96, Math.round(60 + ratio * 80)),
+          evidenceCount: fastCases,
+          evidenceReferences: supportingCases,
+          description: `${fastCases} cases closed below ${config.rapidClosurePercentile}th percentile duration (${fastPct} min).`,
+          methodology: `Closure duration compared against ${config.rapidClosurePercentile}th percentile of entity historical baseline and peer distribution.`,
+          limitations: 'Short closure may reflect efficient automated triage rather than a gap.',
+          peerComparison: 'Investigation duration significantly below peer baseline',
+          recommendation: 'Manual examination of rapidly closed cases recommended.'
+        })
+      }
+
+      if (template / total > config.templateReuseThreshold) {
+        const supportingCases = cases.filter(c => c.isTemplateReuse === 1).map(c => c.id).slice(0, 100)
+        gaps.push({
+          findingType: 'EXECUTION_GAP',
+          period,
+          title: 'Repeated Template Investigation',
+          entityId: eid,
+          controlArea: 'Investigation',
+          severity: template / total > 0.2 ? 'High' : 'Medium',
+          confidence: Math.min(92, Math.round(60 + (template / total) * 100)),
+          evidenceCount: template,
+          evidenceReferences: supportingCases,
+          description: `${template} cases share near-identical investigation narratives.`,
+          methodology: 'N-gram similarity over investigation note text. Cases with >90% similarity flagged.',
+          limitations: 'Similar incidents may legitimately yield similar notes.',
+          peerComparison: 'Template reuse above peer average',
+          recommendation: 'Review investigation templates for over-reliance on boilerplate text.'
+        })
+      }
+
+      if (zeroDepth / total > config.zeroDepthThreshold) {
+        const supportingCases = cases.filter(c => c.investigationDepth === 0).map(c => c.id).slice(0, 100)
+        gaps.push({
+          findingType: 'EXECUTION_GAP',
+          period,
+          title: 'Superficial Investigation',
+          entityId: eid,
+          controlArea: 'Alert Handling',
+          severity: 'Medium',
+          confidence: Math.min(90, Math.round(55 + (zeroDepth / total) * 80)),
+          evidenceCount: zeroDepth,
+          evidenceReferences: supportingCases,
+          description: `${zeroDepth} cases closed with zero investigation depth.`,
+          methodology: 'Investigation depth proxy (actions, notes, evidence attachments) compared against closure.',
+          limitations: 'Depth indicators may not capture offline analysis.',
+          peerComparison: 'Investigation depth below peer median',
+          recommendation: 'Verify investigation depth recording for low-depth cases.'
+        })
+      }
+    }
+
+    const alerts = await Alert.find({ entityId: eid, period, severity: 'Critical' }).lean()
     const critTotal = alerts.length
-    const critNoEsc = alerts.filter(a => !a.escalationPath).length
+    const criticalAlertsWithoutEscalation = alerts.filter(a => !a.escalationPath)
+    const critNoEsc = criticalAlertsWithoutEscalation.length
 
     const e = await Entity.findOne({ id: eid }).lean()
     const sector = e?.sector
-    const ps = await peerStats(sector)
-
-    // Rapid closure - percentile-based
-    const durations = cases.map(c => c.durationMin).filter(d => d != null) as number[]
-    const fastPct = durations.length ? percentile(durations, config.rapidClosurePercentile) : 0
-    const fastCases = cases.filter(c => (c.durationMin ?? 9999) <= fastPct).length
-
-    if (fastCases > 0 && fastCases / total > 0.1) {
-      const ratio = fastCases / total
-      gaps.push({
-        findingType: 'EXECUTION_GAP',
-        title: 'Rapid Closure Without Investigation',
-        entityId: eid,
-        controlArea: 'Investigation',
-        severity: ratio > 0.4 ? 'Critical' : 'High',
-        confidence: Math.min(96, Math.round(60 + ratio * 80)),
-        evidenceCount: fastCases,
-        description: `${fastCases} cases closed below ${config.rapidClosurePercentile}th percentile duration (${fastPct} min).`,
-        methodology: `Closure duration compared against ${config.rapidClosurePercentile}th percentile of entity historical baseline and peer distribution.`,
-        limitations: 'Short closure may reflect efficient automated triage rather than a gap.',
-        peerComparison: 'Investigation duration significantly below peer baseline',
-        recommendation: 'Manual examination of rapidly closed cases recommended.'
-      })
-    }
-
-    if (template / total > config.templateReuseThreshold) {
-      gaps.push({
-        findingType: 'EXECUTION_GAP',
-        title: 'Repeated Template Investigation',
-        entityId: eid,
-        controlArea: 'Investigation',
-        severity: template / total > 0.2 ? 'High' : 'Medium',
-        confidence: Math.min(92, Math.round(60 + (template / total) * 100)),
-        evidenceCount: template,
-        description: `${template} cases share near-identical investigation narratives.`,
-        methodology: 'N-gram similarity over investigation note text. Cases with >90% similarity flagged.',
-        limitations: 'Similar incidents may legitimately yield similar notes.',
-        peerComparison: 'Template reuse above peer average',
-        recommendation: 'Review investigation templates for over-reliance on boilerplate text.'
-      })
-    }
-
-    if (zeroDepth / total > config.zeroDepthThreshold) {
-      gaps.push({
-        findingType: 'EXECUTION_GAP',
-        title: 'Superficial Investigation',
-        entityId: eid,
-        controlArea: 'Alert Handling',
-        severity: 'Medium',
-        confidence: Math.min(90, Math.round(55 + (zeroDepth / total) * 80)),
-        evidenceCount: zeroDepth,
-        description: `${zeroDepth} cases closed with zero investigation depth.`,
-        methodology: 'Investigation depth proxy (actions, notes, evidence attachments) compared against closure.',
-        limitations: 'Depth indicators may not capture offline analysis.',
-        peerComparison: 'Investigation depth below peer median',
-        recommendation: 'Verify investigation depth recording for low-depth cases.'
-      })
-    }
+    const ps = await peerStats(period, sector)
 
     if (critTotal > 0 && critNoEsc / critTotal > config.criticalNoEscalationThreshold) {
       const ratio = critNoEsc / critTotal
       gaps.push({
         findingType: 'EXECUTION_GAP',
+        period,
         title: 'Critical Alert Without Escalation',
         entityId: eid,
         controlArea: 'Escalation',
         severity: ratio > 0.3 ? 'Critical' : 'High',
         confidence: Math.min(95, Math.round(60 + ratio * 80)),
         evidenceCount: critNoEsc,
+        evidenceReferences: criticalAlertsWithoutEscalation.map(alert => alert.id).slice(0, 100),
         description: `${critNoEsc} critical alerts resolved with no recorded escalation.`,
         methodology: 'Critical-alert resolution cross-referenced against escalation events in case timeline.',
         limitations: 'Escalation may occur outside the system of record.',
@@ -365,7 +410,7 @@ export async function detectExecutionGaps(entityId?: string) {
 
 export async function persistFindings(gaps: any[]) {
   for (const g of gaps) {
-    const existing = await Finding.findOne({ findingType: g.findingType, entityId: g.entityId, title: g.title })
+    const existing = await Finding.findOne({ findingType: g.findingType, entityId: g.entityId, period: g.period, title: g.title })
     if (existing) {
       Object.assign(existing, g)
       await existing.save()
@@ -385,40 +430,43 @@ export async function persistFindings(gaps: any[]) {
 // ============================================================
 // NEGATIVE SPACE / BLIND SPOTS
 // ============================================================
-export async function detectBlindSpots(entityId?: string) {
+export async function detectBlindSpots(period: string, entityId?: string) {
   const config = await loadConfig()
   const filter: any = {}
   if (entityId) filter.entityId = entityId
+  filter.period = period
   const rows = await TelemetryCoverage.find(filter).lean()
   const blindSpots: any[] = []
 
   for (const r of rows) {
+    const observed = r.observedCoverage ?? r.observed
+    if (observed == null) continue
     // Critical threshold
-    if (r.observedCoverage < config.negativeSpaceCriticalThreshold) {
+    if (observed < config.negativeSpaceCriticalThreshold) {
       blindSpots.push({
         entityId: r.entityId,
         assetGroup: r.assetGroup,
         category: r.category,
-        observedPct: r.observedCoverage,
+        observedPct: observed,
         severity: 'Critical',
-        confidence: Math.min(95, 50 + (config.negativeSpaceCriticalThreshold - r.observedCoverage)),
-        description: `Only ${r.observedCoverage}% of expected telemetry observed for ${r.category} (critical threshold: ${config.negativeSpaceCriticalThreshold}%).`,
+        confidence: Math.min(95, 50 + (config.negativeSpaceCriticalThreshold - observed)),
+        description: `Only ${observed}% of expected telemetry observed for ${r.category} (critical threshold: ${config.negativeSpaceCriticalThreshold}%).`,
         methodology: `Observed coverage compared against critical threshold (${config.negativeSpaceCriticalThreshold}%) and peer median.`,
         limitations: 'Telemetry may be aggregated or monitored through alternate channels.',
-        peerComparison: `Coverage ${Math.round(50 - r.observedCoverage)}% below sector median`,
+        peerComparison: `Coverage ${Math.round(50 - observed)}% below sector median`,
         recommendation: 'Immediate telemetry deployment review for critical asset group.'
       })
     }
     // Warning threshold
-    else if (r.observedCoverage < config.negativeSpaceWarningThreshold) {
+    else if (observed < config.negativeSpaceWarningThreshold) {
       blindSpots.push({
         entityId: r.entityId,
         assetGroup: r.assetGroup,
         category: r.category,
-        observedPct: r.observedCoverage,
+        observedPct: observed,
         severity: 'High',
-        confidence: Math.min(90, 40 + (config.negativeSpaceWarningThreshold - r.observedCoverage)),
-        description: `Only ${r.observedCoverage}% of expected telemetry observed for ${r.category} (warning threshold: ${config.negativeSpaceWarningThreshold}%).`,
+        confidence: Math.min(90, 40 + (config.negativeSpaceWarningThreshold - observed)),
+        description: `Only ${observed}% of expected telemetry observed for ${r.category} (warning threshold: ${config.negativeSpaceWarningThreshold}%).`,
         methodology: `Observed coverage compared against warning threshold (${config.negativeSpaceWarningThreshold}%) and historical baseline.`,
         limitations: 'Telemetry may be aggregated or monitored through alternate channels.',
         peerComparison: `Coverage below sector median`,
@@ -435,26 +483,27 @@ type AlertSeverity = 'Critical' | 'High' | 'Medium' | 'Low' | 'Informational'
 type CaseBehaviour = 'Normal' | 'Unusually Fast' | 'Superficial' | 'Repetitive' | 'Requires Review'
 
 // ============================================================
-export async function escalationAnalytics() {
-  const critTotal = await Alert.countDocuments({ severity: 'Critical' as const })
-  const critEsc = await Alert.countDocuments({ severity: 'Critical' as const, escalationPath: { $exists: true, $nin: [null, ''] } })
+export async function escalationAnalytics(period: string, entityId?: string) {
+  const scope = { period, ...(entityId ? { entityId } : {}) }
+  const critTotal = await Alert.countDocuments({ ...scope, severity: 'Critical' as const })
+  const critEsc = await Alert.countDocuments({ ...scope, severity: 'Critical' as const, escalationPath: { $exists: true, $nin: [null, ''] } })
 
   const severities: AlertSeverity[] = ['Critical', 'High', 'Medium', 'Low', 'Informational']
   const severityMatrix = []
   for (const sev of severities) {
-    const total = await Alert.countDocuments({ severity: sev })
-    const esc = await Alert.countDocuments({ severity: sev, escalationPath: { $exists: true, $nin: [null, ''] } })
+    const total = await Alert.countDocuments({ ...scope, severity: sev })
+    const esc = await Alert.countDocuments({ ...scope, severity: sev, escalationPath: { $exists: true, $nin: [null, ''] } })
     severityMatrix.push({ severity: sev, escalated: esc, notEscalated: total - esc })
   }
 
   const pathsAgg = await Alert.aggregate([
-    { $match: { escalationPath: { $exists: true, $nin: [null, ''] } } },
+    { $match: { ...scope, escalationPath: { $exists: true, $nin: [null, ''] } } },
     { $group: { _id: '$escalationPath', count: { $sum: 1 } } },
     { $sort: { count: -1 } }
   ])
 
   const delayDist = await Alert.aggregate([
-    { $match: { escalationDelayMin: { $gte: 0 } } },
+    { $match: { ...scope, escalationDelayMin: { $gte: 0 } } },
     { $bucket: { groupBy: '$escalationDelayMin', boundaries: [0, 60, 240, 1440, 10080, Infinity], default: 'Other', output: { count: { $sum: 1 } } } }
   ])
 
@@ -465,8 +514,8 @@ export async function escalationAnalytics() {
     { label: '1–7 days', severity: 'Late', color: '#f97316' },
     { label: '> 7 days', severity: 'Severe delay', color: '#ef4444' },
   ]
-  const escalatedWithin24h = await Alert.countDocuments({ escalationPath: { $exists: true, $nin: [null, ''] }, escalationDelayMin: { $lte: 1440 } })
-  const escalationOver24h = await Alert.countDocuments({ escalationPath: { $exists: true, $nin: [null, ''] }, escalationDelayMin: { $gt: 1440 } })
+  const escalatedWithin24h = await Alert.countDocuments({ ...scope, escalationPath: { $exists: true, $nin: [null, ''] }, escalationDelayMin: { $lte: 1440 } })
+  const escalationOver24h = await Alert.countDocuments({ ...scope, escalationPath: { $exists: true, $nin: [null, ''] }, escalationDelayMin: { $gt: 1440 } })
 
   return {
     escalatedCritical: critEsc,
@@ -486,17 +535,18 @@ export async function escalationAnalytics() {
 // ============================================================
 // ALERT ANALYTICS
 // ============================================================
-export async function alertAnalytics() {
-  const total = await Alert.countDocuments()
+export async function alertAnalytics(period: string, entityId?: string) {
+  const scope = { period, ...(entityId ? { entityId } : {}) }
+  const total = await Alert.countDocuments(scope)
   const severities: AlertSeverity[] = ['Critical', 'High', 'Medium', 'Low', 'Informational']
   const distribution = []
   for (const sev of severities) {
-    distribution.push({ severity: sev, count: await Alert.countDocuments({ severity: sev }) })
+    distribution.push({ severity: sev, count: await Alert.countDocuments({ ...scope, severity: sev }) })
   }
 
   const [alertCategories, linkedCases] = await Promise.all([
-    Alert.find().select({ id: 1, category: 1 }).lean(),
-    Case.find({ alertId: { $ne: null } }).select({ alertId: 1 }).lean(),
+    Alert.find(scope).select({ id: 1, category: 1 }).lean(),
+    Case.find({ ...scope, alertId: { $ne: null } }).select({ alertId: 1 }).lean(),
   ])
   const linkedAlertIds = new Set(linkedCases.map(item => item.alertId).filter(Boolean))
   const conversions = new Map<string, { category: string; alerts: number; cases: number }>()
@@ -508,14 +558,14 @@ export async function alertAnalytics() {
   }
   const conversionAgg = [...conversions.values()].sort((a, b) => b.alerts - a.alerts)
 
-  const ackAvg = await Alert.aggregate([{ $match: { acknowledgementTimeMin: { $ne: null } } }, { $group: { _id: null, v: { $avg: '$acknowledgementTimeMin' } } }])
-  const invAvg = await Alert.aggregate([{ $match: { investigationTimeMin: { $ne: null } } }, { $group: { _id: null, v: { $avg: '$investigationTimeMin' } } }])
-  const cloAvg = await Alert.aggregate([{ $match: { closureTimeMin: { $ne: null } } }, { $group: { _id: null, v: { $avg: '$closureTimeMin' } } }])
-  const linkedCaseCount = await Case.countDocuments({ alertId: { $ne: null } })
-  const criticalClosureCount = await Alert.countDocuments({ severity: 'Critical', status: 'closed' })
+  const ackAvg = await Alert.aggregate([{ $match: { ...scope, acknowledgementTimeMin: { $ne: null } } }, { $group: { _id: null, v: { $avg: '$acknowledgementTimeMin' } } }])
+  const invAvg = await Alert.aggregate([{ $match: { ...scope, investigationTimeMin: { $ne: null } } }, { $group: { _id: null, v: { $avg: '$investigationTimeMin' } } }])
+  const cloAvg = await Alert.aggregate([{ $match: { ...scope, closureTimeMin: { $ne: null } } }, { $group: { _id: null, v: { $avg: '$closureTimeMin' } } }])
+  const linkedCaseCount = await Case.countDocuments({ ...scope, alertId: { $ne: null } })
+  const criticalClosureCount = await Alert.countDocuments({ ...scope, severity: 'Critical', status: 'closed' })
 
   const monthlySeverity = await Alert.aggregate([
-    { $match: { createdAt: { $ne: null } } },
+    { $match: { ...scope, createdAt: { $ne: null } } },
     { $group: { _id: { year: { $year: '$createdAt' }, month: { $month: '$createdAt' }, severity: '$severity' }, count: { $sum: 1 } } },
     { $sort: { '_id.year': 1, '_id.month': 1 } }
   ])
@@ -529,6 +579,7 @@ export async function alertAnalytics() {
     volumeByMonthMap.set(monthLabel, bucket)
   }
   const dispositionAgg = await Alert.aggregate([
+    { $match: { period } },
     { $group: { _id: { $ifNull: ['$disposition', '$closureNote'] }, count: { $sum: 1 } } },
     { $sort: { count: -1 } }, { $limit: 8 }
   ])
@@ -540,6 +591,7 @@ export async function alertAnalytics() {
 
   // Repeat alerts by asset
   const repeatAlerts = await Alert.aggregate([
+    { $match: scope },
     { $group: { _id: '$asset', count: { $sum: 1 } } },
     { $sort: { count: -1 } },
     { $limit: 10 }
@@ -547,7 +599,7 @@ export async function alertAnalytics() {
 
   // Critical closure patterns
   const criticalClosure = await Alert.aggregate([
-    { $match: { severity: 'Critical' as const, status: 'closed' } },
+    { $match: { period, severity: 'Critical' as const, status: 'closed' } },
     { $group: { _id: '$closureNote', count: { $sum: 1 } } },
     { $sort: { count: -1 } }
   ])
@@ -574,16 +626,17 @@ export async function alertAnalytics() {
 // ============================================================
 // INVESTIGATION ANALYTICS
 // ============================================================
-export async function investigationAnalytics() {
-  const total = await Case.countDocuments()
+export async function investigationAnalytics(period: string, entityId?: string) {
+  const scope = { period, ...(entityId ? { entityId } : {}) }
+  const total = await Case.countDocuments(scope)
   const behaviours: CaseBehaviour[] = ['Normal', 'Superficial', 'Repetitive', 'Unusually Fast', 'Requires Review']
   const behaviour = []
   for (const b of behaviours) {
-    behaviour.push({ classification: b, count: await Case.countDocuments({ behaviour: b }) })
+    behaviour.push({ classification: b, count: await Case.countDocuments({ ...scope, behaviour: b }) })
   }
 
   const duration = await Case.aggregate([
-    { $match: { closedAt: { $ne: null } } },
+    { $match: { ...scope, closedAt: { $ne: null } } },
     { $group: {
       _id: null,
       d1: { $sum: { $cond: [{ $lt: [{ $ifNull: ['$durationMin', 99999] }, 10] }, 1, 0] } },
@@ -596,29 +649,29 @@ export async function investigationAnalytics() {
   ])
 
   const reopening = await Case.aggregate([
-    { $group: { _id: '$entityId', reopened: { $sum: '$reopenedCount' }, total: { $sum: 1 } } }
+    { $match: scope }, { $group: { _id: '$entityId', reopened: { $sum: '$reopenedCount' }, total: { $sum: 1 } } }
   ])
 
   const depth = await Case.aggregate([
-    { $group: { _id: '$investigationDepth', count: { $sum: 1 } } },
+    { $match: scope }, { $group: { _id: '$investigationDepth', count: { $sum: 1 } } },
     { $sort: { _id: 1 } }
   ])
 
   const evidenceFreq = await Case.aggregate([
-    { $group: { _id: '$evidenceCount', avgPerCase: { $avg: '$evidenceCount' }, cases: { $sum: 1 } } },
+    { $match: scope }, { $group: { _id: '$evidenceCount', avgPerCase: { $avg: '$evidenceCount' }, cases: { $sum: 1 } } },
     { $sort: { _id: 1 } }
   ])
 
   const workload = await Case.aggregate([
-    { $match: { investigator: { $ne: null } } },
+    { $match: { ...scope, investigator: { $ne: null } } },
     { $group: { _id: '$investigator', cases: { $sum: 1 }, avgDuration: { $avg: '$durationMin' } } },
     { $sort: { cases: -1 } }
   ])
 
   const [durationAverage, reopenedCases, casesRequiringReview] = await Promise.all([
-    Case.aggregate([{ $group: { _id: null, value: { $avg: '$durationMin' } } }]),
-    Case.countDocuments({ reopenedCount: { $gt: 0 } }),
-    Case.countDocuments({ behaviour: 'Requires Review' }),
+    Case.aggregate([{ $match: scope }, { $group: { _id: null, value: { $avg: '$durationMin' } } }]),
+    Case.countDocuments({ ...scope, reopenedCount: { $gt: 0 } }),
+    Case.countDocuments({ ...scope, behaviour: 'Requires Review' }),
   ])
 
   const d = duration[0] || { d1: 0, d2: 0, d3: 0, d4: 0, d5: 0, d6: 0 }
@@ -636,7 +689,7 @@ export async function investigationAnalytics() {
     kpis: {
       totalCases: total,
       meanDuration: `${meanDuration.toFixed(1)} min`,
-      investigationToClosure: total ? `${((await Case.countDocuments({ status: 'closed' }) / total) * 100).toFixed(1)}%` : '0%',
+      investigationToClosure: total ? `${((await Case.countDocuments({ ...scope, status: 'closed' }) / total) * 100).toFixed(1)}%` : '0%',
       caseReopening: total ? `${((reopenedCases / total) * 100).toFixed(1)}%` : '0%',
       requiresReview: casesRequiringReview,
     },
@@ -660,117 +713,100 @@ export async function investigationAnalytics() {
 // ============================================================
 // PEER BENCHMARKING
 // ============================================================
-export async function peerBenchmark(entityId: string) {
-  const config = await loadConfig()
+export async function peerBenchmark(entityId: string, period: string) {
   const e = await Entity.findOne({ id: entityId }).lean()
   if (!e) throw new Error('Entity not found')
-  const em = await EntityMetric.findOne({ entityId, period: PERIOD }).lean()
+  const em = await EntityMetric.findOne({ entityId, period }).lean()
 
-  const allMetrics = await EntityMetric.find({ period: PERIOD }).lean()
+  const allMetrics = await EntityMetric.find({ period }).lean()
   const allEntities = await Entity.find().lean()
   const entitySector = new Map(allEntities.map(x => [x.id, x.sector]))
-  let peers = allMetrics.filter(m => entitySector.get(m.entityId) === e.sector && m.entityId !== entityId)
+  const dimensionKeys = ASSESSMENT_FRAMEWORK.dimensions.map(dimension => dimension.key)
+  let peers = allMetrics.filter(metric =>
+    metric.entityId !== entityId &&
+    entitySector.get(metric.entityId) === e.sector &&
+    dimensionKeys.every(key => Number.isFinite((metric as any)[key]))
+  )
+  if (peers.length < 2) peers = allMetrics.filter(metric =>
+    metric.entityId !== entityId && dimensionKeys.every(key => Number.isFinite((metric as any)[key]))
+  )
 
-  // If sector peers are limited, fall back to fleet peers
-  if (peers.length < 2) {
-    peers = allMetrics.filter(m => m.entityId !== entityId)
+  const [alertCounts, caseDurations, escalationRates, telemetryRows] = await Promise.all([
+    Alert.aggregate([{ $match: { period } }, { $group: { _id: '$entityId', count: { $sum: 1 } } }]),
+    Case.aggregate([{ $match: { period, durationMin: { $ne: null } } }, { $group: { _id: '$entityId', average: { $avg: '$durationMin' } } }]),
+    Alert.aggregate([
+      { $match: { period } },
+      { $group: { _id: '$entityId', rate: { $avg: { $cond: [{ $ne: ['$escalationPath', null] }, 1, 0] } } } }
+    ]),
+    TelemetryCoverage.find({ period }).select({ entityId: 1, observedCoverage: 1, observed: 1 }).lean()
+  ])
+  const alertCountMap = new Map(alertCounts.map(row => [row._id, row.count as number]))
+  const durationMap = new Map(caseDurations.filter(row => Number.isFinite(row.average)).map(row => [row._id, row.average as number]))
+  const escalationMap = new Map(escalationRates.filter(row => Number.isFinite(row.rate)).map(row => [row._id, row.rate as number]))
+  const coverageMap = new Map<string, number[]>()
+  for (const row of telemetryRows) {
+    const observed = row.observedCoverage ?? row.observed
+    if (observed == null) continue
+    const values = coverageMap.get(row.entityId) || []
+    values.push(observed)
+    coverageMap.set(row.entityId, values)
   }
-  if (peers.length === 0) {
-    peers = allMetrics
+  const averageCoverage = (id: string) => {
+    const values = coverageMap.get(id)
+    return values?.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null
   }
+  const maturityScore = buildEntityAssessment(em).maturityScore
+  const pMaturity = peers.map(metric => buildEntityAssessment(metric).maturityScore).filter((value): value is number => typeof value === 'number' && Number.isFinite(value))
 
-  const alertVolume = await Alert.countDocuments({ entityId })
-  const invTime = (await Case.aggregate([{ $match: { entityId } }, { $group: { _id: null, v: { $avg: '$durationMin' } } }]))[0]?.v || 0
-  const escRate = (await Alert.aggregate([{ $match: { entityId } }, { $group: { _id: null, r: { $avg: { $cond: [{ $ne: ['$escalationPath', null] }, 1, 0] } } } }]))[0]?.r || 0
-  const maturityScore = buildEntityAssessment(em).maturityScore ?? 0
-
-  const pAlertVol = []
-  const pInvTime = []
-  const pEscRate = []
-  const pMaturity = []
-  for (const p of peers) {
-    pAlertVol.push(await Alert.countDocuments({ entityId: p.entityId }))
-    pInvTime.push((await Case.aggregate([{ $match: { entityId: p.entityId } }, { $group: { _id: null, v: { $avg: '$durationMin' } } }]))[0]?.v || 0)
-    pEscRate.push((await Alert.aggregate([{ $match: { entityId: p.entityId } }, { $group: { _id: null, r: { $avg: { $cond: [{ $ne: ['$escalationPath', null] }, 1, 0] } } } }]))[0]?.r || 0)
-    pMaturity.push(buildEntityAssessment(p).maturityScore ?? 0)
-  }
-
-  const mk = (metric: string, ev: number, display: string, pv: number[], pvDisplay: string, assess: (pct: number) => string) => {
-    const med = median(pv)
-    const pct = percentileRank(ev, [...pv, ev])
-    return { metric, entityValue: ev, entityDisplay: display, peerMedian: med, peerMedianDisplay: pvDisplay, percentile: pct, assessment: assess(pct) }
+  const mk = (
+    metric: string,
+    ev: number | null,
+    display: string,
+    pv: Array<number | null | undefined>,
+    assess: (pct: number) => string
+  ) => {
+    const validPeers = pv.filter((value): value is number => typeof value === 'number' && Number.isFinite(value))
+    const peerMedian = validPeers.length ? median(validPeers) : null
+    const pct = ev == null || !validPeers.length ? null : percentileRank(ev, [...validPeers, ev])
+    return {
+      metric,
+      entityValue: ev,
+      entityDisplay: display,
+      peerMedian,
+      peerMedianDisplay: peerMedian == null ? '—' : String(Math.round(peerMedian)),
+      percentile: pct,
+      assessment: pct == null ? 'Insufficient period data' : assess(pct)
+    }
   }
 
   const assessNorm = (pct: number) => pct >= 80 ? 'Significantly above peer range' : pct >= 60 ? 'Above peer range' : pct >= 40 ? 'In peer range' : pct >= 20 ? 'Below peer range' : 'Significantly below peer range'
   const assessInv = (pct: number) => pct <= 20 ? 'Significantly below peer range' : pct <= 40 ? 'Below peer range' : pct <= 60 ? 'In peer range' : pct <= 80 ? 'Above peer range' : 'Significantly above peer range'
 
-  const otherEntityCoverage = (entities: any[], sector: string, exId: string) => entities.filter(x => x.sector === sector && x.id !== exId).map(x => x.telemetryCoverage)
-
+  const entityAlertCount = alertCountMap.get(entityId) ?? null
+  const entityDuration = durationMap.get(entityId) ?? null
+  const entityEscalationRate = escalationMap.get(entityId) ?? null
+  const entityCoverage = averageCoverage(entityId)
+  const peerCoverage = allEntities.filter(item => item.sector === e.sector && item.id !== entityId).map(item => averageCoverage(item.id))
   return [
-    mk('Alert Volume', alertVolume, alertVolume.toLocaleString(), pAlertVol, String(Math.round(median(pAlertVol)).toLocaleString()), assessNorm),
-    mk('Investigation Duration', Math.round(invTime), `${Math.round(invTime)} min`, pInvTime, `${Math.round(median(pInvTime))} min`, assessInv),
-    mk('Escalation Rate', +(escRate * 100).toFixed(1), `${(escRate * 100).toFixed(1)}%`, pEscRate.map(v => +(v * 100).toFixed(1)), `${(median(pEscRate) * 100).toFixed(1)}%`, assessInv),
-    mk('Telemetry Coverage', e.telemetryCoverage, `${e.telemetryCoverage}%`, allEntities.filter(x => x.sector === e.sector && x.id !== entityId).map(x => x.telemetryCoverage), `${Math.round(median(otherEntityCoverage(allEntities, e.sector, entityId)))}%`, assessInv),
-    mk('Investigation Depth', em?.investigation ?? 0, String(em?.investigation ?? 0), peers.map(p => p.investigation ?? 0), String(Math.round(median(peers.map(p => p.investigation ?? 0)))), assessInv),
-    mk('SOC Maturity Score', maturityScore, `${maturityScore}/100`, pMaturity, `${Math.round(median(pMaturity))}/100`, assessNorm)
+    mk('Alert Volume', entityAlertCount, entityAlertCount == null ? 'Not available' : entityAlertCount.toLocaleString(), peers.map(peer => alertCountMap.get(peer.entityId)), assessNorm),
+    mk('Investigation Duration', entityDuration, entityDuration == null ? 'Not available' : `${Math.round(entityDuration)} min`, peers.map(peer => durationMap.get(peer.entityId)), assessInv),
+    mk('Escalation Rate', entityEscalationRate == null ? null : +(entityEscalationRate * 100).toFixed(1), entityEscalationRate == null ? 'Not available' : `${(entityEscalationRate * 100).toFixed(1)}%`, peers.map(peer => escalationMap.get(peer.entityId)).map(value => value == null ? null : +(value * 100).toFixed(1)), assessInv),
+    mk('Telemetry Coverage', entityCoverage, entityCoverage == null ? 'Not available' : `${entityCoverage.toFixed(1)}%`, peerCoverage, assessInv),
+    mk('Investigation Score', em?.investigation ?? null, em?.investigation == null ? 'Not available' : String(em.investigation), peers.map(peer => peer.investigation), assessInv),
+    mk('SOC Maturity Score', maturityScore, maturityScore == null ? 'Not available' : `${maturityScore}/100`, pMaturity, assessNorm)
   ]
 }
 
 // ============================================================
 // REVIEW PRIORITISATION
 // ============================================================
-export async function generateReviewQueue() {
+export async function generateReviewQueue(period: string, entityId?: string) {
   const config = await loadConfig()
-  const gaps = await detectExecutionGaps()
-  await persistFindings(gaps)
-  const blindSpots = await detectBlindSpots()
+  const blindSpots = await detectBlindSpots(period, entityId)
 
-  const findingsInDb = await Finding.find().lean()
-  const findingMap = new Map(findingsInDb.map(f => [`${f.entityId}_${f.title}`, f]))
-
-  const allFindings = [
-    ...gaps.map((g, idx) => {
-      const match = findingMap.get(`${g.entityId}_${g.title}`)
-      const id = match?.id || `EG-${180 + idx + 1}`
-      return {
-        ...g,
-        id,
-        findingId: id,
-        ref: id,
-        reason: g.description || g.title,
-        reasons: [g.description || g.title],
-        status: match?.status || 'New',
-        reviewedBy: match?.reviewedBy || null,
-        examinerNote: match?.examinerNote || null,
-        source: 'execution_gap'
-      }
-    }),
-    ...blindSpots.map((b, idx) => {
-      const match = findingMap.get(`${b.entityId}_${b.category}`) || findingMap.get(`${b.entityId}_${b.description}`)
-      const id = match?.id || `NS-${200 + idx + 1}`
-      return {
-        ...b,
-        id,
-        findingId: id,
-        ref: id,
-        reason: b.description || b.title || b.category,
-        reasons: [b.description || b.title || b.category],
-        status: match?.status || 'New',
-        reviewedBy: match?.reviewedBy || null,
-        examinerNote: match?.examinerNote || null,
-        source: 'negative_space',
-        findingType: 'NEGATIVE_SPACE'
-      }
-    })
-  ]
-
-  // Include distinct persisted finding classes (anomalies, peer deviations,
-  // data quality, and sample scenarios) alongside freshly detected gaps.
-  const queueFindings = await Finding.find({ status: { $in: ['New', 'In Review'] } }).lean()
-  const includedFindingIds = new Set(allFindings.map(f => f.ref))
-  for (const finding of queueFindings) {
-    if (includedFindingIds.has(finding.id)) continue
-    allFindings.push({
+  const findingScope = { period, ...(entityId ? { entityId } : {}) }
+  const queueFindings = await Finding.find({ ...findingScope, status: { $in: ['New', 'In Review'] } }).lean()
+  const allFindings = queueFindings.map(finding => ({
       ...finding,
       ref: finding.id,
       findingId: finding.id,
@@ -779,8 +815,24 @@ export async function generateReviewQueue() {
       source: 'persisted_finding',
       mitre: (finding as any).mitreTechnique,
       alertCategory: (finding.supportingMetrics as any)?.alertCategory
+  }))
+  const includedBlindSpots = new Set<string>()
+  for (const [index, blindSpot] of blindSpots.entries()) {
+    const key = `${blindSpot.entityId}\u0000${blindSpot.category}\u0000${blindSpot.assetGroup}`
+    if (includedBlindSpots.has(key)) continue
+    includedBlindSpots.add(key)
+    const id = `NS-${period.replace(/[^A-Za-z0-9]/g, '')}-${blindSpot.entityId}-${index + 1}`
+    allFindings.push({
+      ...blindSpot,
+      id,
+      findingId: id,
+      ref: id,
+      reason: blindSpot.description || blindSpot.category,
+      reasons: [blindSpot.description || blindSpot.category],
+      status: 'New',
+      source: 'negative_space',
+      findingType: 'NEGATIVE_SPACE'
     })
-    includedFindingIds.add(finding.id)
   }
 
   const weights = config.reviewPriorityWeights
@@ -835,42 +887,26 @@ export async function generateReviewQueue() {
 // ============================================================
 // TELEMETRY COVERAGE MATRIX (DYNAMIC HEATMAP)
 // ============================================================
-export async function telemetryCoverageMatrix(entityId?: string) {
-  const filter: any = {}
+export async function telemetryCoverageMatrix(period: string, entityId?: string) {
+  const filter: any = { period }
   if (entityId && entityId !== 'ALL') filter.entityId = entityId
   const records = await TelemetryCoverage.find(filter).lean()
   
   const categories = Array.from(new Set(records.map(r => r.category))).filter(Boolean)
   const columns = ['Expected Telemetry', 'Observed Telemetry', 'Alert Gen. Stream', 'Case Evidence', 'Escalation Logs']
   
-  if (categories.length === 0) {
-    return {
-      categories: ['Critical systems', 'Security devices', 'Network segments', 'Applications', 'Cloud environments', 'Identity infrastructure', 'OT/ICS environments'],
-      columns,
-      matrix: [
-        [100, 75, 80, 70, 65],
-        [100, 82, 85, 78, 72],
-        [100, 78, 80, 72, 68],
-        [100, 68, 70, 62, 58],
-        [100, 62, 65, 55, 48],
-        [100, 85, 88, 80, 75],
-        [100, 48, 50, 42, 35]
-      ]
-    }
-  }
-
   const matrix = categories.map(cat => {
     const matching = records.filter(r => r.category === cat)
-    const avg = (fn: (r: any) => number) => {
-      const vals = matching.map(fn).filter(v => v != null && !isNaN(v))
-      return vals.length ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : 0
+    const avg = (fn: (r: any) => number | undefined) => {
+      const vals = matching.map(fn).filter((value): value is number => typeof value === 'number' && Number.isFinite(value))
+      return vals.length ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : null
     }
     return [
-      avg(r => r.expectedCoverage ?? r.expected ?? 100),
-      avg(r => r.observedCoverage ?? r.observed ?? 75),
-      avg(r => r.alertGeneration ?? Math.min(100, Math.round((r.observedCoverage ?? 75) * 1.05))),
-      avg(r => r.investigationEvidence ?? Math.round((r.observedCoverage ?? 75) * 0.9)),
-      avg(r => r.escalationEvidence ?? Math.round((r.observedCoverage ?? 75) * 0.82))
+      avg(r => r.expectedCoverage ?? r.expected),
+      avg(r => r.observedCoverage ?? r.observed),
+      avg(r => r.alertGeneration),
+      avg(r => r.investigationEvidence),
+      avg(r => r.escalationEvidence)
     ]
   })
 
@@ -881,9 +917,9 @@ export async function telemetryCoverageMatrix(entityId?: string) {
 // ============================================================
 // ANOMALY DETECTION
 // ============================================================
-export async function detectAnomalies(entityId?: string) {
+export async function detectAnomalies(period: string, entityId?: string) {
   const config = await loadConfig()
-  const filter: any = {}
+  const filter: any = { period }
   if (entityId) filter.entityId = entityId
 
   const alerts = await Alert.find(filter).lean()
@@ -952,10 +988,9 @@ export async function detectAnomalies(entityId?: string) {
 // ============================================================
 // DATA QUALITY
 // ============================================================
-export async function assessDataQuality(entityId?: string) {
-  const filter: any = {}
+export async function assessDataQuality(period: string, entityId?: string) {
+  const filter: any = { period }
   if (entityId) filter.entityId = entityId
-  const period = PERIOD
 
   const alerts = await Alert.find(filter).lean()
   const cases = await Case.find(filter).lean()
@@ -1020,33 +1055,34 @@ export async function assessDataQuality(entityId?: string) {
 // ============================================================
 // OVERVIEW KPIs
 // ============================================================
-export async function overviewKPIs() {
-  const config = await loadConfig()
-  const cses = await Entity.countDocuments()
-  const attention = await EntityMetric.countDocuments({ period: PERIOD, priority: { $in: ['Critical', 'High'] } })
-  const highRisk = await EntityMetric.countDocuments({ period: PERIOD, riskScore: { $gte: 70 } })
-  const gapAgg = await EntityMetric.aggregate([{ $match: { period: PERIOD } }, { $group: { _id: null, v: { $sum: '$executionGapCount' } } }])
-  const negAgg = await EntityMetric.aggregate([{ $match: { period: PERIOD } }, { $group: { _id: null, v: { $sum: '$negativeSpaceCount' } } }])
-  const alerts = await Alert.countDocuments()
-  const cases = await Case.countDocuments()
-  const prioritySamples = await Case.countDocuments({ behaviour: 'Requires Review' })
+export async function overviewKPIs(period: string, entityId?: string) {
+  const scope = { period, ...(entityId ? { entityId } : {}) }
+  const metrics = await EntityMetric.find(scope).lean()
+  const cses = new Set(metrics.filter(metric => Number.isFinite(metric.maturityScore)).map(metric => metric.entityId)).size
+  const attention = metrics.filter(metric => ['Critical', 'High'].includes(metric.priority || '')).length
+  const highRisk = metrics.filter(metric => Number.isFinite(metric.riskScore) && metric.riskScore! >= 70).length
+  const gapTotal = metrics.reduce((sum, metric) => sum + (metric.executionGapCount ?? 0), 0)
+  const negativeSpaceTotal = metrics.reduce((sum, metric) => sum + (metric.negativeSpaceCount ?? 0), 0)
+  const alerts = await Alert.countDocuments(scope)
+  const cases = await Case.countDocuments(scope)
+  const prioritySamples = await Case.countDocuments({ ...scope, behaviour: 'Requires Review' })
 
   const kpis = [
-    { label: 'CSEs Assessed', value: cses, display: String(cses), trend: 5, icon: 'building', threshold: 'neutral' },
-    { label: 'Entities Requiring Attention', value: attention, display: String(attention), trend: 3, icon: 'alert', threshold: 'watched' },
-    { label: 'High-Risk Entities', value: highRisk, display: String(highRisk), trend: 6, icon: 'shield', threshold: 'bad' },
-    { label: 'Execution Gap Indicators', value: gapAgg[0]?.v || 0, display: String(gapAgg[0]?.v || 0), trend: 4, icon: 'gap', threshold: 'watched' },
-    { label: 'Negative Space Indicators', value: negAgg[0]?.v || 0, display: String(negAgg[0]?.v || 0), trend: 2, icon: 'space', threshold: 'watched' },
-    { label: 'Alerts Reviewed', value: alerts, display: alerts.toLocaleString(), trend: 14, icon: 'alerts', threshold: 'neutral' },
-    { label: 'Cases Analysed', value: cases, display: cases.toLocaleString(), trend: 8, icon: 'cases', threshold: 'neutral' },
-    { label: 'Priority Samples', value: prioritySamples, display: prioritySamples.toLocaleString(), trend: -8, icon: 'samples', threshold: 'watched' }
+    { label: 'CSEs Assessed', value: cses, display: String(cses), trend: null, icon: 'building', threshold: 'neutral' },
+    { label: 'Entities Requiring Attention', value: attention, display: String(attention), trend: null, icon: 'alert', threshold: 'watched' },
+    { label: 'High-Risk Entities', value: highRisk, display: String(highRisk), trend: null, icon: 'shield', threshold: 'bad' },
+    { label: 'Execution Gap Indicators', value: gapTotal, display: String(gapTotal), trend: null, icon: 'gap', threshold: 'watched' },
+    { label: 'Negative Space Indicators', value: negativeSpaceTotal, display: String(negativeSpaceTotal), trend: null, icon: 'space', threshold: 'watched' },
+    { label: 'Alerts Reviewed', value: alerts, display: alerts.toLocaleString(), trend: null, icon: 'alerts', threshold: 'neutral' },
+    { label: 'Cases Analysed', value: cases, display: cases.toLocaleString(), trend: null, icon: 'cases', threshold: 'neutral' },
+    { label: 'Priority Samples', value: prioritySamples, display: prioritySamples.toLocaleString(), trend: null, icon: 'samples', threshold: 'watched' }
   ]
 
   return kpis
 }
 
-export async function riskDistribution() {
-  const metrics = await EntityMetric.find({ period: PERIOD }).lean()
+export async function riskDistribution(period: string, entityId?: string) {
+  const metrics = (await EntityMetric.find({ period, ...(entityId ? { entityId } : {}) }).lean()).filter(metric => Number.isFinite(metric.riskScore))
   const buckets = [
     { level: 'Critical', color: '#dc2626', count: 0 },
     { level: 'High', color: '#f97316', count: 0 },
@@ -1055,7 +1091,7 @@ export async function riskDistribution() {
     { level: 'Normal', color: '#10b981', count: 0 }
   ]
   for (const m of metrics) {
-    const lvl = riskLevel(m.riskScore)
+    const lvl = riskLevel(m.riskScore!)
     const idx = buckets.findIndex(b => b.level === lvl)
     if (idx >= 0) buckets[idx].count++
   }

@@ -5,21 +5,30 @@ import { Alert } from '../models/Alert'
 import { Case } from '../models/Case'
 import { ASSESSMENT_FRAMEWORK, buildEntityAssessment } from '../services/assessmentFramework'
 import { ASSESSMENT_PERIODS, assessmentPeriodOrder, isAssessmentPeriod, normalizeAssessmentPeriod } from '../services/assessmentPeriods'
+import { appendAuditEvent } from '../services/audit'
+import { resolveAssessmentPeriod } from '../services/configuration'
+import { safeErrorMessage } from '../services/errorHandling'
 
 const router = Router()
 
 function handleError(err: unknown, res: Response) {
-  const message = err instanceof Error ? err.message : 'Unknown error'
-  res.status(500).json({ success: false, error: { code: 'INTERNAL_ERROR', message } })
+  const status = typeof err === 'object' && err !== null && 'statusCode' in err ? Number(err.statusCode) : 500
+  const message = safeErrorMessage(err, status)
+  res.status(status).json({ success: false, error: { code: status === 400 ? 'INVALID_INPUT' : 'INTERNAL_ERROR', message } })
 }
 
 // List entities with risk metrics
 router.get('/', async (req, res) => {
   try {
     const { sector, criticality, search } = req.query
-    const period = normalizeAssessmentPeriod(req.query.period)
-    if (!isAssessmentPeriod(period)) return res.status(400).json({ success: false, error: { code: 'INVALID_PERIOD', message: 'Unsupported assessment period.' } })
+    const period = await resolveAssessmentPeriod(req.query.period)
     const filter: any = {}
+    if (req.user?.role === 'SOC Manager') filter.id = { $in: req.user.assignedEntityIds }
+    if (typeof req.query.entityId === 'string') {
+      filter.id = req.user?.role === 'SOC Manager'
+        ? { $in: req.user.assignedEntityIds.filter(id => id === req.query.entityId) }
+        : req.query.entityId
+    }
     if (sector) filter.sector = sector
     if (criticality) filter.criticality = criticality
     if (search) {
@@ -37,19 +46,19 @@ router.get('/', async (req, res) => {
       const assessment = buildEntityAssessment(m)
       return {
         id: e.id, name: e.name, sector: e.sector, region: e.region, criticality: e.criticality,
-        riskScore: m?.riskScore ?? 50, prevRiskScore: m?.prevRiskScore ?? 50,
-        executionGaps: m?.executionGapCount ?? 0, negativeSpace: m?.negativeSpaceCount ?? 0,
-        peerDeviation: m?.peerDeviation ?? 'In Range', priority: m?.priority ?? 'Normal',
+        riskScore: m?.riskScore ?? null, prevRiskScore: m?.prevRiskScore ?? null,
+        executionGaps: m?.executionGapCount ?? null, negativeSpace: m?.negativeSpaceCount ?? null,
+        peerDeviation: m?.peerDeviation ?? null, priority: m?.priority ?? null,
         status: e.assessmentStatus,
-        threatDetection: m?.threatDetection ?? 50,
-        investigation: m?.investigation ?? 50,
-        escalation: m?.escalation ?? 50,
-        incidentResponse: m?.incidentResponse ?? 50,
-        securityOperations: m?.securityOperations ?? 50,
-        governanceOversight: m?.governanceOversight ?? 50,
-        operationalDiscipline: m?.operationalDiscipline ?? 50,
-        cyberResilience: m?.cyberResilience ?? 50,
-        dataCompleteness: e.dataCompleteness, telemetryCoverage: e.telemetryCoverage, lastSubmission: e.lastSubmission,
+        threatDetection: m?.threatDetection ?? null,
+        investigation: m?.investigation ?? null,
+        escalation: m?.escalation ?? null,
+        incidentResponse: m?.incidentResponse ?? null,
+        securityOperations: m?.securityOperations ?? null,
+        governanceOversight: m?.governanceOversight ?? null,
+        operationalDiscipline: m?.operationalDiscipline ?? null,
+        cyberResilience: m?.cyberResilience ?? null,
+        dataCompleteness: e.dataCompleteness ?? null, telemetryCoverage: e.telemetryCoverage ?? null, lastSubmission: e.lastSubmission ?? null,
         assessmentPeriod: period,
         assessmentProvenance: m?.assessmentProvenance || 'legacy',
         maturityScore: assessment.maturityScore,
@@ -95,8 +104,8 @@ router.put('/:id/assessment', async (req, res) => {
     const entity = await Entity.findOne({ id: req.params.id }).lean()
     if (!entity) return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Entity not found' } })
 
-    const period = normalizeAssessmentPeriod(req.body.period)
-    if (!isAssessmentPeriod(period)) return res.status(400).json({ success: false, error: { code: 'INVALID_PERIOD', message: 'Unsupported assessment period.' } })
+    if (typeof req.body.period !== 'string') return res.status(400).json({ success: false, error: { code: 'INVALID_PERIOD', message: 'A supported assessment period is required.' } })
+    const period = await resolveAssessmentPeriod(req.body.period)
 
     const submittedScores = req.body.dimensions
     const scoreKeys = ASSESSMENT_FRAMEWORK.dimensions.map(dimension => dimension.key)
@@ -122,6 +131,16 @@ router.put('/:id/assessment', async (req, res) => {
       { upsert: true, runValidators: true, setDefaultsOnInsert: true }
     )
 
+    if (req.user) await appendAuditEvent({
+      actor: req.user,
+      action: 'Assessment recorded',
+      actionCategory: 'Entity',
+      entityId: entity.id,
+      detail: `Assessment recorded for ${period}.`,
+      sessionId: req.sessionId,
+      ipAddress: req.ip,
+      userAgent: req.get('user-agent')
+    })
     res.json({ success: true, data: { period, provenance: 'submitted', assessment } })
   } catch (err) { handleError(err, res) }
 })
@@ -129,8 +148,7 @@ router.put('/:id/assessment', async (req, res) => {
 // Get single entity
 router.get('/:id', async (req, res) => {
   try {
-    const period = normalizeAssessmentPeriod(req.query.period)
-    if (!isAssessmentPeriod(period)) return res.status(400).json({ success: false, error: { code: 'INVALID_PERIOD', message: 'Unsupported assessment period.' } })
+    const period = await resolveAssessmentPeriod(req.query.period)
     const e = await Entity.findOne({ id: req.params.id }).lean()
     if (!e) return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Entity not found' } })
     const m = await EntityMetric.findOne({ entityId: e.id, period }).lean()
@@ -143,34 +161,34 @@ router.get('/:id', async (req, res) => {
 
     const totalAlerts = alerts.length
     const totalCases = cases.length
-    const alertToCaseRatio = totalAlerts > 0 ? ((totalCases / totalAlerts) * 100).toFixed(1) : '14.8'
+    const alertToCaseRatio = totalAlerts > 0 ? Number(((totalCases / totalAlerts) * 100).toFixed(1)) : null
 
     const durations = cases.map(c => c.durationMin).filter(d => d != null && !isNaN(d)) as number[]
     const meanTriageDuration = durations.length 
-      ? (durations.reduce((a, b) => a + b, 0) / durations.length).toFixed(1) 
-      : '4.2'
+      ? Number((durations.reduce((a, b) => a + b, 0) / durations.length).toFixed(1))
+      : null
 
-    const depths = cases.map(c => c.investigationDepth).filter(d => d != null && !isNaN(d)) as number[]
+    const depths = cases.map(c => c.evidenceAttachments).filter(d => d != null && !isNaN(d)) as number[]
     const avgArtifactsAttached = depths.length 
-      ? (depths.reduce((a, b) => a + b, 0) / depths.length).toFixed(1) 
-      : '3.4'
+      ? Number((depths.reduce((a, b) => a + b, 0) / depths.length).toFixed(1))
+      : null
 
     const templateCases = cases.filter(c => c.isTemplateReuse === 1).length
-    const templateReusePct = totalCases > 0 ? ((templateCases / totalCases) * 100).toFixed(1) : '18.2'
+    const templateReusePct = totalCases > 0 ? Number(((templateCases / totalCases) * 100).toFixed(1)) : null
 
     const critAlerts = alerts.filter(a => a.severity === 'Critical')
     const critUnescalated = critAlerts.filter(a => !a.escalationPath).length
     const statutoryCompliance = critAlerts.length > 0 
-      ? (((critAlerts.length - critUnescalated) / critAlerts.length) * 100).toFixed(1) 
-      : '84.1'
+      ? Number((((critAlerts.length - critUnescalated) / critAlerts.length) * 100).toFixed(1))
+      : null
 
     const operationalMetrics = {
-      alertToCaseRatio: `${alertToCaseRatio}% conversion`,
-      meanTriageDuration: `${meanTriageDuration} minutes`,
-      avgArtifactsAttached: `${avgArtifactsAttached} evidence items`,
-      templateReuseIndex: `${templateReusePct}% repeated`,
-      statutoryCompliance: `${statutoryCompliance}% on-time`,
-      criticalUnescalated: `${critUnescalated} alerts flagged`
+      alertToCaseRatio,
+      meanTriageDuration,
+      avgArtifactsAttached,
+      templateReuseIndex: templateReusePct,
+      statutoryCompliance,
+      criticalUnescalated: critAlerts.length ? critUnescalated : null
     }
 
     res.json({
@@ -185,25 +203,25 @@ router.get('/:id', async (req, res) => {
         assessmentFrameworkId: assessment.frameworkId,
         assessmentFrameworkVersion: assessment.frameworkVersion,
         operationalMetrics,
-        riskScore: m?.riskScore ?? 50,
-        prevRiskScore: m?.prevRiskScore ?? 50,
-        executionGaps: m?.executionGapCount ?? 0,
-        negativeSpace: m?.negativeSpaceCount ?? 0,
-        peerDeviation: m?.peerDeviation ?? 'In Range',
-        priority: m?.priority ?? 'Normal',
+        riskScore: m?.riskScore ?? null,
+        prevRiskScore: m?.prevRiskScore ?? null,
+        executionGaps: m?.executionGapCount ?? null,
+        negativeSpace: m?.negativeSpaceCount ?? null,
+        peerDeviation: m?.peerDeviation ?? null,
+        priority: m?.priority ?? null,
         status: e.assessmentStatus,
-        detection: m?.threatDetection ?? 50,
-        threatDetection: m?.threatDetection ?? 50,
-        investigation: m?.investigation ?? 50,
-        escalation: m?.escalation ?? 50,
-        incidentResponse: m?.incidentResponse ?? 50,
-        operations: m?.securityOperations ?? 50,
-        securityOperations: m?.securityOperations ?? 50,
-        operationalDiscipline: m?.operationalDiscipline ?? 50,
-        governance: m?.governanceOversight ?? 50,
-        governanceOversight: m?.governanceOversight ?? 50,
-        resilience: m?.cyberResilience ?? 50,
-        cyberResilience: m?.cyberResilience ?? 50
+        detection: m?.threatDetection ?? null,
+        threatDetection: m?.threatDetection ?? null,
+        investigation: m?.investigation ?? null,
+        escalation: m?.escalation ?? null,
+        incidentResponse: m?.incidentResponse ?? null,
+        operations: m?.securityOperations ?? null,
+        securityOperations: m?.securityOperations ?? null,
+        operationalDiscipline: m?.operationalDiscipline ?? null,
+        governance: m?.governanceOversight ?? null,
+        governanceOversight: m?.governanceOversight ?? null,
+        resilience: m?.cyberResilience ?? null,
+        cyberResilience: m?.cyberResilience ?? null
       }
     })
   } catch (err) { handleError(err, res) }
@@ -213,8 +231,54 @@ router.get('/:id', async (req, res) => {
 router.post('/', async (req, res) => {
   try {
     const { id, name, sector, region, criticality, metrics } = req.body
-    await Entity.create({ id, name, sector, region, criticality, dataCompleteness: req.body.dataCompleteness ?? 100, telemetryCoverage: req.body.telemetryCoverage ?? 100 })
-    await EntityMetric.create({ entityId: id, period: 'Q2 FY 2026-27', ...(metrics || {}) })
+    if (typeof id !== 'string' || !id.trim() ||
+      typeof name !== 'string' || !name.trim() ||
+      typeof sector !== 'string' || !sector.trim() ||
+      typeof region !== 'string' || !region.trim() ||
+      !['Critical', 'High', 'Medium', 'Low'].includes(criticality)) {
+      return res.status(400).json({ success: false, error: { code: 'INVALID_ENTITY', message: 'Provide an entity ID, name, sector, region, and supported criticality.' } })
+    }
+    const period = normalizeAssessmentPeriod(req.body.period)
+    if (!isAssessmentPeriod(period) || typeof req.body.period !== 'string') return res.status(400).json({ success: false, error: { code: 'INVALID_PERIOD', message: 'A supported assessment period is required.' } })
+    for (const key of ['dataCompleteness', 'telemetryCoverage']) {
+      const value = req.body[key]
+      if (value !== undefined && (!Number.isFinite(value) || value < 0 || value > 100)) {
+        return res.status(400).json({ success: false, error: { code: 'INVALID_ENTITY_DATA', message: `${key} must be a number from 0 to 100.` } })
+      }
+    }
+    if (metrics !== undefined) {
+      if (!metrics || typeof metrics !== 'object' || Array.isArray(metrics)) return res.status(400).json({ success: false, error: { code: 'INVALID_ASSESSMENT', message: 'Metrics must be an object.' } })
+      const scoreKeys = ASSESSMENT_FRAMEWORK.dimensions.map(dimension => dimension.key)
+      const invalidKey = scoreKeys.find(key => !Number.isFinite(metrics[key]) || metrics[key] < 0 || metrics[key] > 100)
+      if (invalidKey) return res.status(400).json({ success: false, error: { code: 'INVALID_ASSESSMENT', message: `Dimension ${invalidKey} must be a number from 0 to 100.` } })
+    }
+    const normalizedId = id.trim()
+    if (await Entity.exists({ id: normalizedId })) {
+      return res.status(409).json({ success: false, error: { code: 'ENTITY_EXISTS', message: `Entity ${normalizedId} is already registered.` } })
+    }
+    const entity = await Entity.create({
+      id: normalizedId,
+      name: name.trim(),
+      sector: sector.trim(),
+      region: region.trim(),
+      criticality,
+      dataCompleteness: req.body.dataCompleteness,
+      telemetryCoverage: req.body.telemetryCoverage,
+      assessmentPeriod: period,
+      dataProvenance: 'submitted'
+    })
+    if (metrics !== undefined) {
+      await EntityMetric.create({ ...Object.fromEntries(ASSESSMENT_FRAMEWORK.dimensions.map(dimension => [dimension.key, metrics[dimension.key]])), entityId: id, period, assessmentProvenance: 'submitted' })
+    }
+    if (req.user) await appendAuditEvent({
+      actor: req.user,
+      action: 'Entity created',
+      actionCategory: 'Entity',
+      entityId: entity.id,
+      sessionId: req.sessionId,
+      ipAddress: req.ip,
+      userAgent: req.get('user-agent')
+    })
     res.status(201).json({ success: true, data: { id } })
   } catch (err) { handleError(err, res) }
 })

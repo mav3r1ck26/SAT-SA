@@ -1,18 +1,21 @@
 import { Router, Response } from 'express'
 import { Alert } from '../models/Alert'
+import { resolveAssessmentPeriod } from '../services/configuration'
+import { safeErrorMessage } from '../services/errorHandling'
 
 const router = Router()
 
 function handleError(err: unknown, res: Response) {
-  const message = err instanceof Error ? err.message : 'Unknown error'
-  res.status(500).json({ success: false, error: { code: 'INTERNAL_ERROR', message } })
+  const status = typeof err === 'object' && err !== null && 'statusCode' in err ? Number(err.statusCode) : 500
+  const message = safeErrorMessage(err, status)
+  res.status(status).json({ success: false, error: { code: status === 400 ? 'INVALID_PERIOD' : 'INTERNAL_ERROR', message } })
 }
 
 // List alerts with filters & pagination
 router.get('/', async (req, res) => {
   try {
     const { entityId, severity, category, status, limit = 100, offset = 0 } = req.query
-    const filter: any = {}
+    const filter: any = { period: await resolveAssessmentPeriod(req.query.period) }
     if (entityId) filter.entityId = entityId
     if (severity) filter.severity = severity
     if (category) filter.category = category
@@ -32,7 +35,7 @@ router.get('/', async (req, res) => {
 // Drill-down: get alert with its case and evidence timeline
 router.get('/:id/timeline', async (req, res) => {
   try {
-    const alert = await Alert.findOne({ id: req.params.id }).lean()
+    const alert = await Alert.findOne({ id: req.params.id, period: await resolveAssessmentPeriod(req.query.period) }).lean()
     if (!alert) return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Alert not found' } })
     res.json({ success: true, data: alert })
   } catch (err) { handleError(err, res) }
@@ -41,7 +44,8 @@ router.get('/:id/timeline', async (req, res) => {
 // Create an alert (ingested data)
 router.post('/', async (req, res) => {
   try {
-    await Alert.create(req.body)
+    const period = await resolveAssessmentPeriod(req.body.period)
+    await Alert.create({ ...req.body, period, dataProvenance: 'submitted' })
     res.status(201).json({ success: true, message: 'Alert created' })
   } catch (err) { handleError(err, res) }
 })

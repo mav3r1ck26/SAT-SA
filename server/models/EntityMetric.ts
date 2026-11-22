@@ -2,56 +2,56 @@ import { Schema, model, InferSchemaType } from 'mongoose'
 
 export const entityMetricSchema = new Schema({
   entityId: { type: String, ref: 'Entity', required: true },
-  period: { type: String, required: true, default: 'Q2 FY 2026-27' },
+  period: { type: String, required: true },
   assessmentProvenance: { type: String, enum: ['submitted', 'sample'], default: 'submitted' },
 
   // 8 Core Supervisory Dimensions (0-100 scale, higher = healthier capability)
-  threatDetection: { type: Number, default: 50, min: 0, max: 100 },
-  investigation: { type: Number, default: 50, min: 0, max: 100 },
-  escalation: { type: Number, default: 50, min: 0, max: 100 },
-  incidentResponse: { type: Number, default: 50, min: 0, max: 100 },
-  securityOperations: { type: Number, default: 50, min: 0, max: 100 },
-  governanceOversight: { type: Number, default: 50, min: 0, max: 100 },
-  operationalDiscipline: { type: Number, default: 50, min: 0, max: 100 },
-  cyberResilience: { type: Number, default: 50, min: 0, max: 100 },
+  threatDetection: { type: Number, min: 0, max: 100 },
+  investigation: { type: Number, min: 0, max: 100 },
+  escalation: { type: Number, min: 0, max: 100 },
+  incidentResponse: { type: Number, min: 0, max: 100 },
+  securityOperations: { type: Number, min: 0, max: 100 },
+  governanceOversight: { type: Number, min: 0, max: 100 },
+  operationalDiscipline: { type: Number, min: 0, max: 100 },
+  cyberResilience: { type: Number, min: 0, max: 100 },
 
   // Backward-compatible dimension aliases for frontend
-  detection: { type: Number, default: 50 },
-  operations: { type: Number, default: 50 },
-  governance: { type: Number, default: 50 },
-  resilience: { type: Number, default: 50 },
+  detection: { type: Number },
+  operations: { type: Number },
+  governance: { type: Number },
+  resilience: { type: Number },
 
   // Composite Supervisory Scores
   assessmentFrameworkId: { type: String, default: 'SAT-SA-SOC' },
   assessmentFrameworkVersion: { type: String, default: '1.0.0' },
   maturityScore: { type: Number, default: null, min: 0, max: 100 },
-  riskScore: { type: Number, default: 50, min: 0, max: 100 },
-  prevRiskScore: { type: Number, default: 50 },
-  riskLevel: { type: String, enum: ['Critical', 'High', 'Moderate', 'Low', 'Normal'], default: 'Normal' },
-  confidence: { type: Number, default: 50, min: 0, max: 100 },
-  priority: { type: String, enum: ['Critical', 'High', 'Moderate', 'Normal', 'Low'], default: 'Normal' },
+  riskScore: { type: Number, min: 0, max: 100 },
+  prevRiskScore: { type: Number },
+  riskLevel: { type: String, enum: ['Critical', 'High', 'Moderate', 'Low', 'Normal'] },
+  confidence: { type: Number, min: 0, max: 100 },
+  priority: { type: String, enum: ['Critical', 'High', 'Moderate', 'Normal', 'Low'] },
 
   // Indicator counts
-  executionGapCount: { type: Number, default: 0, min: 0 },
-  executionGaps: { type: Number, default: 0 }, // Frontend alias
-  negativeSpaceCount: { type: Number, default: 0, min: 0 },
-  negativeSpace: { type: Number, default: 0 }, // Frontend alias
-  anomalyCount: { type: Number, default: 0, min: 0 },
-  dataQualityIssues: { type: Number, default: 0, min: 0 },
+  executionGapCount: { type: Number, min: 0 },
+  executionGaps: { type: Number }, // Frontend alias
+  negativeSpaceCount: { type: Number, min: 0 },
+  negativeSpace: { type: Number }, // Frontend alias
+  anomalyCount: { type: Number, min: 0 },
+  dataQualityIssues: { type: Number, min: 0 },
 
   // Peer comparison
-  peerPercentile: { type: Number, default: 50, min: 0, max: 100 },
-  peerDeviation: { type: String, default: 'In Range' },
-  priorityScore: { type: Number, default: 0, min: 0 },
+  peerPercentile: { type: Number, min: 0, max: 100 },
+  peerDeviation: { type: String },
+  priorityScore: { type: Number, min: 0 },
 
   // Explainable Component Contributions
   scoreComponents: {
-    executionGaps: { type: Number, default: 0 },
-    negativeSpace: { type: Number, default: 0 },
-    peerDeviation: { type: Number, default: 0 },
-    mlRiskProbability: { type: Number, default: 0 },
-    anomalyIndicators: { type: Number, default: 0 },
-    dataQuality: { type: Number, default: 0 }
+    executionGaps: { type: Number },
+    negativeSpace: { type: Number },
+    peerDeviation: { type: Number },
+    mlRiskProbability: { type: Number },
+    anomalyIndicators: { type: Number },
+    dataQuality: { type: Number }
   }
 }, { timestamps: true })
 

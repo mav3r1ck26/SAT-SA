@@ -55,13 +55,12 @@ This directory contains production-grade, domain-specific testing datasets creat
 ## 🚀 How to Ingest & Test
 
 ### Option A: Via SAT-SA Frontend UI
-1. Navigate to **`http://127.0.0.1:3000/`**
-2. Click **Data Ingestion & QC** in the left sidebar.
-3. Click **Ingest Telemetry Bundle** and select `01_siem_alerts_airgap_CSE014_scada.json` or `02_syslog_cef_alerts_CSE027_corebanking.csv`.
-4. Observe the SHA-256 hash validation, ingestion quality score, and new records updating the live fleet.
+Use the frontend URL printed by Vite (normally `http://127.0.0.1:5173/`), sign in with an authorized account, and confirm the API health endpoint at `http://127.0.0.1:3500/api/health` reports `"status":"ok"` before testing. The API requires MongoDB and an authenticated session; the legacy test script in `scripts/` targets older ports and routes.
 
-### Option B: Via Automated Testing Script
-Run the automated test runner:
-```bash
-python scripts/test_live_data_pipeline.py
-```
+1. In **Data Ingestion**, load each of the following preloaded bundles once: `01_siem_alerts_airgap_CSE014_scada.json`, `02_syslog_cef_alerts_CSE027_corebanking.csv`, `03_forensic_cases_audit_CSE001_powergrid.csv`, and `05_negative_space_blindspot_matrix.json`. Check each result for received, valid, persisted, and partially processed counts; do not interpret a partial or failed batch as a successful ingestion.
+2. Verify the default assessment period is **Q2 FY 2026–27**, matching the supplied records. Refresh the ingestion metrics once processing completes; the UI should show the completed batch statuses without repeatedly polling during upload.
+3. Visit **Overview**, **Anomalies**, **Execution Gaps**, **Negative Space**, **Alert Analytics**, **Investigation Analytics**, **Escalation Analytics**, **Entities**, and **Review Queue**. Confirm each finishes loading, reports a genuine empty state only when its successful response has no matching records, and offers a retry state rather than replacing failed data with zeros.
+4. On Anomalies, check the records and counters for Q2, then exercise entity (`CSE-014`, `CSE-027`, `CSE-001`), severity, type, and search filters; verify previous/next pagination when results span multiple pages. Check Negative Space for the supplied entities and telemetry matrix.
+5. Change the assessment period and entity, confirm the results follow the selected scope, then return to Q2 and **All entities**. Review the same filters on Overview and the other analytics tabs.
+6. To verify the 429 UI safely, use a dedicated non-production API instance with `SATSA_RATE_LIMIT_ANALYTICS=1`. Make two analytics reads as the same user; the second must return 429 with `Retry-After`, and the page retry action must remain disabled until that interval expires. Restore the normal setting and restart the API afterward.
+7. Optionally submit `04_soc_efficiency_ml_batch_test.csv` through the ML evaluation workflow; it is a feature-vector batch, not an alert/case dataset.

@@ -220,7 +220,12 @@ SAT-SA is a **supervisory analytics platform** for NCIIPC-style assessment of SO
 
 ## Phase 6: Integration & Testing (Week 5)
 
-### Completed Tests
+### Historical Verification Notes (Not Re-run in the Current Phase)
+
+The following are retained from an earlier development log and are not current verification
+results. The ML metrics and sample records were generated from synthetic data and are not
+independent model validation.
+
 | Test | Result |
 |------|--------|
 | TypeScript compilation | ✅ Clean |
@@ -233,7 +238,7 @@ SAT-SA is a **supervisory analytics platform** for NCIIPC-style assessment of SO
 | ML proxy via Node API | ✅ `/api/ml/*` endpoints |
 | Full inference pipeline | ✅ File A + File B CSV output |
 
-### Sample Inference Output
+### Historical Synthetic Sample Output (Illustrative Only)
 ```
 Entity: CSE-014
 - False Positive Rate: 22.4% (Needs Improvement) [80%]
@@ -263,13 +268,17 @@ Entity: CSE-014
 | 1 | Incorrect Classification | Template reuse + superficial at 28.5% | 28.5% | Review investigation templates |
 | 2 | False Positive Rate | FPR 27.8% > 15% threshold | 27.8% | Tune detection rules |
 
-## Key Improvements from Retraining
+## Historical Synthetic-Data Experiment (Not a Validation Result)
+
+The figures below are historical results from synthetic data only. They are not independent
+validation evidence, calibration measurements, or production performance claims.
 - **6x more training data** (200 → 1,200 samples)
 - **All 6 targets** R² > 0.85 (was 0.75-0.95)
 - **Signature age** R² improved 0.903 → 0.913
 - **Playbook gaps** R² improved 0.911 → 0.914
 
-The model is now production-ready for SOC efficiency evaluation with File A (Examiner report) and File B (SOC Management recommendations) generation working end-to-end.
+These results do not establish production readiness. Current prediction confidence is unavailable
+unless a verified estimate is supplied; tree prediction spread is not calibrated confidence.
 
 ---
 
@@ -292,7 +301,7 @@ The model is now production-ready for SOC efficiency evaluation with File A (Exa
 
 | Priority | Item |
 |----------|------|
-| **Medium** | Authentication (JWT) + RBAC middleware |
+| **Complete, focused tests added** | Opaque-cookie session authentication and RBAC middleware (not JWT/bcrypt) |
 | **Medium** | AnalyticsJob async processing with status tracking |
 | **Medium** | Report generation backend (PDF/CSV export) |
 | **Low** | Frontend integration with real API (currently uses mock data) |
@@ -310,12 +319,12 @@ The model is now production-ready for SOC efficiency evaluation with File A (Exa
 - [x] MongoDB schemas validated
 - [x] Seed data generates without errors
 - [x] Node API endpoints respond correctly
-- [x] Python ML service starts and loads models
-- [x] ML inference returns valid predictions with confidence
-- [x] File A + File B CSV generation works
+- [ ] Python ML service starts and loads models (not verified in the current environment; FastAPI is unavailable)
+- [ ] ML inference runtime contract (not verified in the current environment)
+- [ ] File A + File B CSV generation runtime tests
 - [x] ML proxy via Node API works
 - [ ] Docker Compose for full stack
-- [ ] JWT authentication + RBAC
+- [x] Opaque-cookie authentication + RBAC (focused middleware test)
 - [ ] Production Docker images
 - [ ] Offline deployment documentation
 
@@ -340,16 +349,13 @@ The model is now production-ready for SOC efficiency evaluation with File A (Exa
 
 ---
 
-## Conclusion
+## Current Verification Status
 
-**SAT-SA backend is production-ready** with:
-- ✅ Complete analytics engine (4-layer architecture)
-- ✅ ML efficiency evaluation (6 targets, R² avg 0.89)
-- ✅ Configurable thresholds/weights via MongoDB
-- ✅ Deterministic rules + ML ensemble
-- ✅ Evidence traceability (Finding → Case → Alert)
-- ✅ Explainable outputs (File A + File B)
-- ✅ Offline/air-gapped operation
-- ✅ Comprehensive seed data for testing
-
-The platform is ready for NCIIPC supervisory assessment use cases.
+The latest verified checks are the frontend production build, backend TypeScript compilation, and
+focused TypeScript tests. Python source syntax parses, but ML runtime evaluation and report
+generation were not executable in the current environment because FastAPI is not installed; no
+dependencies were installed during this work. ML predictions remain advisory, require complete
+features, and must not be treated as calibrated confidence or independently validated supervisory
+evidence. The application is not declared production-ready: MongoDB least-privilege configuration,
+protected external audit checkpoints, distributed rate limiting, full integration tests, and an
+approved offline deployment process remain operational requirements.

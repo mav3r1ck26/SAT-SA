@@ -1,6 +1,7 @@
 import { Schema, model, InferSchemaType } from 'mongoose'
 
 export const auditLogSchema = new Schema({
+  sequence: { type: Number, required: true, unique: true },
   timestamp: { type: Date, default: Date.now, required: true },
   user: { type: String, required: true },
   userRole: { type: String },
@@ -12,7 +13,7 @@ export const auditLogSchema = new Schema({
   caseId: { type: String, ref: 'Case' },
   alertId: { type: String, ref: 'Alert' },
 
-  status: { type: String, enum: ['Success', 'Failed', 'Partial', 'Pending', 'Confirmed', 'In Progress', 'Complete', 'Assigned', 'Submitted', 'Warning', 'Dismissed'], default: 'Success' },
+  status: { type: String, default: 'Success' },
   previousValue: { type: Schema.Types.Mixed },
   newValue: { type: Schema.Types.Mixed },
   detail: { type: String },
@@ -20,9 +21,12 @@ export const auditLogSchema = new Schema({
   ipAddress: { type: String },
   userAgent: { type: String },
 
-  sessionId: { type: String }
+  sessionId: { type: String },
+  previousHash: { type: String, required: true },
+  eventHash: { type: String, required: true }
 }, { timestamps: false })
 
+auditLogSchema.index({ sequence: 1 }, { unique: true })
 auditLogSchema.index({ timestamp: -1 })
 auditLogSchema.index({ user: 1 })
 auditLogSchema.index({ action: 1 })

@@ -33,6 +33,7 @@ export async function linkFindingsToSampleEvidence() {
         const eventTime = caseDoc.investigationStartedAt || caseDoc.openedAt
         await EvidenceEvent.create({
           entityId: caseDoc.entityId,
+          period: caseDoc.period,
           findingId: finding.id,
           caseId: caseDoc.id,
           alertId: caseDoc.alertId,

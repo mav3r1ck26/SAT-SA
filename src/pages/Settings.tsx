@@ -1,33 +1,149 @@
-import React, { useEffect, useState } from 'react'
-import { ShieldCheck, Database, Lock, FileText, AlertTriangle, Cpu, Terminal, KeyRound, Server, BookOpen } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { ShieldCheck, Database, Lock, FileText, AlertTriangle, Cpu, Terminal, KeyRound, Server, BookOpen, UserCheck, UserX } from 'lucide-react'
 import { TelemetryPulse } from '../components/ui'
-import { fetchAssessmentFramework } from '../api/client'
+import { approveAuthAccount, fetchApiHealth, fetchAssessmentFramework, fetchAuthAccounts, fetchConfigurations, fetchMLHealth, rejectAuthAccount, verifyAuditChain, updateConfiguration, type AuthAccount } from '../api/client'
+import { useApiResource } from '../hooks/useApiResource'
 
 export default function Settings() {
-  const [framework, setFramework] = useState<any>(null)
-  const [frameworkError, setFrameworkError] = useState('')
+  const frameworkResource = useApiResource('settings-framework', signal => fetchAssessmentFramework(signal))
+  const configurationsResource = useApiResource('settings-configurations', signal => fetchConfigurations(signal))
+  const healthResource = useApiResource('settings-api-health', signal => fetchApiHealth(signal))
+  const mlHealthResource = useApiResource('settings-ml-health', signal => fetchMLHealth(signal))
+  const auditResource = useApiResource('settings-audit-chain', signal => verifyAuditChain(signal))
+  const framework = frameworkResource.data
+  const health = healthResource.data
+  const mlHealth = mlHealthResource.data
+  const auditStatus = auditResource.data
+  const [configurationOverrides, setConfigurationOverrides] = useState<Record<string, any>>({})
+  const configurations = (configurationsResource.data || []).map(config => ({
+    ...config,
+    ...configurationOverrides[config.key]
+  }))
+  const [savingKey, setSavingKey] = useState('')
+  const [saveMessage, setSaveMessage] = useState('')
+  const [drafts, setDrafts] = useState<Record<string, string>>({})
+  const [pendingAccounts, setPendingAccounts] = useState<AuthAccount[]>([])
+  const [accountsLoading, setAccountsLoading] = useState(true)
+  const [accountsError, setAccountsError] = useState('')
+  const [accountActionId, setAccountActionId] = useState('')
+  const [accountMessage, setAccountMessage] = useState('')
+
+  const refreshPendingAccounts = async () => {
+    setAccountsError('')
+    try {
+      const accounts = await fetchAuthAccounts()
+      setPendingAccounts(accounts.filter(account => account.pendingApproval))
+    } catch (error) {
+      setAccountsError(error instanceof Error ? error.message : 'Access requests could not be loaded.')
+    } finally {
+      setAccountsLoading(false)
+    }
+  }
+
+  useEffect(() => { void refreshPendingAccounts() }, [])
+
+  const reviewAccount = async (account: AuthAccount, approve: boolean) => {
+    setAccountActionId(account.id)
+    setAccountMessage('')
+    setAccountsError('')
+    try {
+      if (approve) await approveAuthAccount(account.id)
+      else await rejectAuthAccount(account.id)
+      setAccountMessage(approve
+        ? `${account.displayName}'s Auditor account is approved and active.`
+        : `${account.displayName}'s access request was rejected.`)
+      await refreshPendingAccounts()
+    } catch (error) {
+      setAccountsError(error instanceof Error ? error.message : 'The access request could not be updated.')
+    } finally {
+      setAccountActionId('')
+    }
+  }
 
   useEffect(() => {
-    fetchAssessmentFramework().then(setFramework).catch(error => {
-      setFrameworkError(error instanceof Error ? error.message : 'Assessment framework could not be loaded')
-    })
-  }, [])
+    if (configurationsResource.data) {
+      setDrafts(Object.fromEntries(configurationsResource.data.map(config => [config.key, JSON.stringify(config.value)])))
+    }
+  }, [configurationsResource.data])
+
+  const saveConfig = async (config: any) => {
+    setSavingKey(config.key)
+    setSaveMessage('')
+    try {
+      const value = JSON.parse(drafts[config.key])
+      const result = await updateConfiguration(config.key, value)
+      setConfigurationOverrides(current => ({
+        ...current,
+        [config.key]: { value: result.value, version: result.version }
+      }))
+      setDrafts(current => ({ ...current, [config.key]: JSON.stringify(result.value) }))
+      setSaveMessage(`${config.key} saved as version ${result.version}.`)
+    } catch (error) {
+      setSaveMessage(error instanceof Error ? error.message : 'Configuration update failed.')
+    } finally {
+      setSavingKey('')
+    }
+  }
 
   return (
     <div className="p-6 max-w-[1400px] mx-auto space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200 pb-4">
         <div>
           <div className="flex items-center gap-3">
-            <h1 className="page-title text-2xl font-bold tracking-tight">Supervisory Node Settings & Hardware Security</h1>
-            <TelemetryPulse active status="online" label="AIR-GAP COMPLIANT NODE" />
+            <h1 className="page-title text-2xl font-bold tracking-tight">Assessment Settings & Service Status</h1>
+            <TelemetryPulse active={health?.status === 'ok'} status={health?.status === 'ok' ? 'online' : healthResource.error ? 'alert' : 'offline'} label={health?.status === 'ok' ? 'API AVAILABLE' : healthResource.loading ? 'CHECKING API' : 'API UNAVAILABLE'} />
           </div>
           <p className="page-subtitle text-slate-500 mt-0.5">
-            Cryptographic parameters, isolation integrity checks, and local deterministic execution environment controls
+            Configured assessment parameters and live service status. Deployment isolation must be verified outside the application.
           </p>
         </div>
       </div>
 
       <div className="space-y-5">
+        <section className="card p-5 space-y-4" aria-labelledby="access-requests-heading">
+          <div className="flex items-start justify-between gap-3 border-b border-slate-200 pb-3">
+            <div>
+              <h2 id="access-requests-heading" className="font-semibold text-slate-800">Account access requests</h2>
+              <p className="mt-1 text-xs text-slate-500">New registrations are inactive Auditor accounts until you approve them.</p>
+            </div>
+            <span className="badge badge-info font-mono">{pendingAccounts.length} pending</span>
+          </div>
+          {accountMessage && <p role="status" className="text-sm text-indigo-700">{accountMessage}</p>}
+          {accountsError && <p role="alert" className="text-sm text-rose-700">{accountsError}</p>}
+          {accountsLoading ? (
+            <p role="status" className="text-sm text-slate-500">Loading access requests…</p>
+          ) : pendingAccounts.length === 0 ? (
+            <p className="text-sm text-slate-500">There are no pending access requests.</p>
+          ) : (
+            <div className="divide-y divide-slate-100">
+              {pendingAccounts.map(account => (
+                <div key={account.id} className="flex flex-col gap-3 py-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <div className="text-sm font-medium text-slate-800">{account.displayName}</div>
+                    <div className="text-xs text-slate-500">{account.username} · Auditor · Requested {new Date(account.createdAt).toLocaleDateString()}</div>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      className="btn btn-primary btn-sm inline-flex items-center gap-1"
+                      disabled={accountActionId !== ''}
+                      onClick={() => void reviewAccount(account, true)}
+                    >
+                      <UserCheck className="h-3.5 w-3.5" /> {accountActionId === account.id ? 'Saving…' : 'Approve'}
+                    </button>
+                    <button
+                      className="btn btn-sm inline-flex items-center gap-1"
+                      disabled={accountActionId !== ''}
+                      onClick={() => void reviewAccount(account, false)}
+                    >
+                      <UserX className="h-3.5 w-3.5" /> Reject
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+
         <div className="card p-5 space-y-4">
           <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-200 pb-3">
             <div>
@@ -39,10 +155,15 @@ export default function Settings() {
             {framework && <span className="badge badge-info font-mono">{framework.id} v{framework.version}</span>}
           </div>
 
-          {frameworkError ? (
-            <p className="text-xs text-rose-600">{frameworkError}</p>
+          {frameworkResource.error ? (
+            <div role="alert" className="text-xs text-rose-600">
+              {frameworkResource.error.message}
+              <button className="btn btn-sm ml-3" disabled={frameworkResource.retryInSeconds > 0} onClick={frameworkResource.retry}>
+                {frameworkResource.retryInSeconds > 0 ? `Retry in ${frameworkResource.retryInSeconds}s` : 'Retry'}
+              </button>
+            </div>
           ) : !framework ? (
-            <p className="text-xs text-slate-500">Loading assessment framework…</p>
+            <p role="status" className="text-xs text-slate-500">Loading assessment framework…</p>
           ) : (
             <>
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 text-xs">
@@ -89,23 +210,70 @@ export default function Settings() {
           )}
         </div>
 
+        <div className="card p-5 space-y-4">
+          <div className="flex items-start justify-between border-b border-slate-200 pb-3">
+            <div>
+              <h2 className="font-semibold text-slate-800">Validated configuration</h2>
+              <p className="mt-1 text-xs text-slate-500">Values are JSON encoded. Updates are versioned and added to the audit chain.</p>
+            </div>
+          </div>
+          {configurationsResource.error && (
+            <p role="alert" className="text-sm text-rose-700">
+              Configuration data is unavailable: {configurationsResource.error.message}
+              <button className="btn btn-sm ml-3" disabled={configurationsResource.retryInSeconds > 0} onClick={configurationsResource.retry}>
+                {configurationsResource.retryInSeconds > 0 ? `Retry in ${configurationsResource.retryInSeconds}s` : 'Retry'}
+              </button>
+            </p>
+          )}
+          {saveMessage && <p role="status" className="text-sm text-indigo-700">{saveMessage}</p>}
+          {configurations.map(config => (
+            <div key={config.key} className="grid gap-3 border-b border-slate-100 pb-4 md:grid-cols-[1fr_2fr_auto] md:items-center">
+              <div>
+                <div className="text-sm font-medium text-slate-800">{config.key}</div>
+                <div className="text-xs text-slate-500">{config.description}</div>
+                <div className="text-[10px] text-slate-400">{config.category} · {config.version == null ? 'version not reported' : `v${config.version}`}{config.minValue != null || config.maxValue != null ? ` · range ${config.minValue ?? '−∞'} to ${config.maxValue ?? '∞'}` : ''}</div>
+              </div>
+              <textarea
+                aria-label={`${config.key} JSON value`}
+                disabled={!config.isEditable || savingKey === config.key}
+                value={drafts[config.key] || ''}
+                onChange={event => setDrafts(current => ({ ...current, [config.key]: event.target.value }))}
+                rows={config.dataType === 'object' || config.dataType === 'array' ? 3 : 1}
+                className="input w-full font-mono text-xs disabled:bg-slate-100"
+              />
+              <button
+                className="btn btn-primary"
+                disabled={!config.isEditable || savingKey === config.key || drafts[config.key] === JSON.stringify(config.value)}
+                onClick={() => void saveConfig(config)}
+              >
+                {savingKey === config.key ? 'Saving…' : config.isEditable ? 'Save' : 'Locked'}
+              </button>
+            </div>
+          ))}
+          {!configurationsResource.error && configurationsResource.loading && <p role="status" className="text-sm text-slate-500">Loading configuration…</p>}
+          {!configurationsResource.loading && !configurationsResource.error && configurations.length === 0 && <p className="text-sm text-slate-500">No configuration values are reported by the API.</p>}
+        </div>
+
         {/* System Information Card */}
         <div className="card p-5">
           <div className="label mb-4 flex items-center justify-between">
             <span className="flex items-center gap-2 text-slate-700 font-bold">
               <Server className="w-4 h-4 text-indigo-600" /> System Architecture & Build Parameters
             </span>
-            <span className="text-[10px] font-mono text-indigo-600">SHA-256 HASH VERIFIED</span>
+            <span className="text-[10px] font-mono text-slate-500">LIVE STATUS</span>
           </div>
+
+            {healthResource.error && <p role="alert" className="mb-3 text-sm text-rose-700">API health unavailable: {healthResource.error.message} <button className="btn btn-sm ml-2" disabled={healthResource.retryInSeconds > 0} onClick={healthResource.retry}>{healthResource.retryInSeconds > 0 ? `Retry in ${healthResource.retryInSeconds}s` : 'Retry'}</button></p>}
+            {mlHealthResource.error && <p role="alert" className="mb-3 text-sm text-rose-700">ML health unavailable: {mlHealthResource.error.message} <button className="btn btn-sm ml-2" disabled={mlHealthResource.retryInSeconds > 0} onClick={mlHealthResource.retry}>{mlHealthResource.retryInSeconds > 0 ? `Retry in ${mlHealthResource.retryInSeconds}s` : 'Retry'}</button></p>}
+            {auditResource.error && <p role="alert" className="mb-3 text-sm text-rose-700">Audit verification unavailable: {auditResource.error.message} <button className="btn btn-sm ml-2" disabled={auditResource.retryInSeconds > 0} onClick={auditResource.retry}>{auditResource.retryInSeconds > 0 ? `Retry in ${auditResource.retryInSeconds}s` : 'Retry'}</button></p>}
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3 font-mono text-xs">
             {[
-              { label: 'Supervisory Engine Build', value: 'SAT-SA v2.4.0 (Enterprise Examination)', status: 'Verified' },
-              { label: 'Execution Environment', value: 'NCIIPC Isolated Sovereign Node', status: 'Secured' },
-              { label: 'Network Boundary', value: 'Strict Physical Air-Gap (Zero Outbound)', status: 'Isolated' },
-              { label: 'Inference Engine', value: 'Local ML Ensemble (Scikit / PyTorch Local)', status: 'Zero Cloud' },
-              { label: 'Data Security Classification', value: 'RESTRICTED // NCIIPC SUPERVISORY USE ONLY', status: 'Enforced' },
-              { label: 'Database Storage Node', value: 'Local MongoDB replica on :27017', status: 'Connected' }
+                { label: 'API service', value: health?.status || (healthResource.loading ? 'Checking…' : 'Not available'), status: health?.status || 'Unknown' },
+                { label: 'Database connection', value: health?.database || (healthResource.loading ? 'Checking…' : 'Not available'), status: health?.database || 'Unknown' },
+                { label: 'ML service', value: mlHealth?.status || (mlHealthResource.loading ? 'Checking…' : 'Not available'), status: mlHealth?.status || 'Unknown' },
+                { label: 'ML model artifact', value: mlHealth?.models_loaded == null ? 'Not reported' : mlHealth.models_loaded ? 'Loaded' : 'Not loaded', status: mlHealth?.models_loaded == null ? 'Unknown' : mlHealth.models_loaded ? 'Loaded' : 'Not loaded' },
+                { label: 'Audit chain', value: auditStatus?.valid == null ? 'Not available' : auditStatus.valid ? `Verified (${auditStatus.checked} events)` : 'Verification failed', status: auditStatus?.valid == null ? 'Unknown' : auditStatus.valid ? 'Verified' : 'Failed' }
             ].map((item, i) => (
               <div key={i} className="flex items-center justify-between p-3 rounded-lg bg-slate-50/80 border border-slate-200">
                 <span className="text-slate-500">{item.label}</span>
@@ -122,13 +290,12 @@ export default function Settings() {
 
         {/* Security & Air-Gap Posture */}
         <div className="card p-5">
-          <div className="label mb-4 text-slate-700 font-bold">Cryptographic Isolation & Assurance Matrix</div>
+          <div className="label mb-4 text-slate-700 font-bold">Runtime Checks</div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {[
-              { icon: ShieldCheck, title: 'NCIIPC Regulated Environment', desc: 'Running in sovereign supervisory container with verified integrity manifests.', border: 'border-emerald-200/60', text: 'text-emerald-700', bg: 'bg-emerald-50/20' },
-              { icon: Database, title: 'Deterministic Local Execution', desc: 'All machine learning heuristics execute locally. Zero outbound telemetry.', border: 'border-cyan-200/60', text: 'text-indigo-600', bg: 'bg-cyan-50/20' },
-              { icon: Lock, title: 'Hardware Air-Gap Assurance', desc: 'Disconnected from public WAN. Ingestion strictly via physical air-gap bundles.', border: 'border-emerald-200/60', text: 'text-emerald-700', bg: 'bg-emerald-50/20' },
-              { icon: FileText, title: 'Cryptographic Audit Log', desc: 'Examiner actions recorded to append-only tamper-evident local storage.', border: 'border-cyan-200/60', text: 'text-indigo-600', bg: 'bg-cyan-50/20' }
+              { icon: ShieldCheck, title: 'API & database', desc: healthResource.error?.message || `API: ${health?.status || 'not reported'}; database: ${health?.database || 'not reported'}.`, border: 'border-slate-200', text: 'text-indigo-600', bg: 'bg-slate-50' },
+              { icon: Cpu, title: 'ML service', desc: mlHealthResource.error?.message || `Service status: ${mlHealth?.status || 'not reported'}; model loaded: ${mlHealth?.models_loaded == null ? 'not reported' : mlHealth.models_loaded ? 'yes' : 'no'}.`, border: 'border-slate-200', text: 'text-indigo-600', bg: 'bg-slate-50' },
+              { icon: FileText, title: 'Audit chain verification', desc: auditResource.error?.message || (auditStatus?.valid ? `${auditStatus.checked} events passed chain verification.` : auditStatus?.valid === false ? 'Audit chain verification failed.' : 'Verification not available.'), border: 'border-slate-200', text: 'text-indigo-600', bg: 'bg-slate-50' }
             ].map((item, i) => {
               const Icon = item.icon
               return (

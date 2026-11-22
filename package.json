@@ -14,6 +14,7 @@
     "seed:assessment-history": "tsx server/seedAssessmentHistory.ts",
     "seed:evidence": "tsx server/link-sample-evidence.ts",
     "seed:review-samples": "tsx server/seed-review-samples.ts",
+    "test": "tsx --test tests/*.test.ts",
     "dev:full": "concurrently -k \"tsx watch server/index.ts\" \"vite\" \"npm run ml:api\"",
     "build:server": "tsc -p server/tsconfig.json"
   },

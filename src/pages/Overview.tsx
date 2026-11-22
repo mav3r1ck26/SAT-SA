@@ -1,95 +1,94 @@
-import React, { useEffect, useState } from 'react'
+import React, { useState } from 'react'
 import StatCard from '../components/StatCard'
 import { StackedBar, Donut } from '../components/charts'
 import { StatusBadge, MitreBadge, TelemetryPulse } from '../components/ui'
 import { useApp } from '../context/AppContext'
-import { fetchOverview, fetchEntities, fetchFindings } from '../api/client'
+import { fetchOverview, fetchEntities, fetchFindings, fetchApiHealth } from '../api/client'
 import { Shield, AlertTriangle, Activity, Filter, Download, ChevronRight, Database, ArrowUpRight } from 'lucide-react'
+import { downloadCSV } from '../utils/export'
+import { useEntityScope } from '../hooks/useEntityScope'
+import { useApiResource } from '../hooks/useApiResource'
+import RequestState from '../components/RequestState'
 
-const filterChips = ['All CSEs', 'Critical Infra', 'Banking & Finance', 'Energy & Power', 'Telecom', 'High Risk', 'Air-Gap Verified']
-
-const defaultConcerns = [
-  { title: 'Critical alerts closed without escalation', severity: 'Critical' as const, affectedEntities: 7, confidence: 92, evidenceCount: 214, mitre: 'T1059.001' },
-  { title: 'Unusually rapid case closure (<5m median)', severity: 'High' as const, affectedEntities: 6, confidence: 89, evidenceCount: 187, mitre: 'T1078' },
-  { title: 'Missing telemetry from critical core switches', severity: 'High' as const, affectedEntities: 5, confidence: 86, evidenceCount: 92, mitre: 'T1562.001' },
-  { title: 'Repetitive investigation disposition patterns', severity: 'Medium' as const, affectedEntities: 4, confidence: 78, evidenceCount: 143, mitre: 'T1036' },
-  { title: 'Significant peer baseline deviation (>3.5σ)', severity: 'Medium' as const, affectedEntities: 6, confidence: 81, evidenceCount: 76, mitre: 'T1041' }
-]
+const filterChips = ['All CSEs', 'Critical Infra', 'Banking & Finance', 'Energy & Power', 'Telecom', 'High Risk', 'High Data Completeness']
 
 export default function Overview() {
-  const { setCurrentPage, setSelectedEntity } = useApp()
-  const [kpis, setKpis] = useState<any[]>([])
-  const [distribution, setDistribution] = useState<any[]>([])
-  const [entitiesList, setEntities] = useState<any[]>([])
-  const [concerns, setConcerns] = useState<any[]>(defaultConcerns)
-  const [loading, setLoading] = useState(true)
+  const { setCurrentPage, setSelectedEntity, assessmentPeriod } = useApp()
+  const entityId = useEntityScope()
   const [activeFilter, setActiveFilter] = useState('All CSEs')
 
-  useEffect(() => {
-    Promise.all([
-      fetchOverview().catch(() => null),
-      fetchEntities().catch(() => []),
-      fetchFindings().catch(() => [])
-    ]).then(([overview, entities, findings]) => {
-      if (overview) {
-        setKpis(overview.kpis || [])
-        setDistribution(overview.distribution || [])
+  const resource = useApiResource(`overview:${assessmentPeriod}:${entityId || 'ALL'}`, async signal => {
+    const [overview, entities, findings, apiHealth] = await Promise.all([
+      fetchOverview(assessmentPeriod, entityId, signal),
+      fetchEntities({ period: assessmentPeriod, ...(entityId ? { entityId } : {}) }, signal),
+      fetchFindings({ period: assessmentPeriod, ...(entityId ? { entityId } : {}) }, signal),
+      fetchApiHealth(signal)
+    ])
+    const grouped = new Map<string, { title: string; severity?: string; affectedEntities: Set<string>; confidence: number[]; evidenceCount: number; hasEvidenceCount: boolean; mitre?: string; sample: boolean }>()
+    for (const finding of findings) {
+      const title = finding.title || finding.finding || 'Finding details not reported'
+      if (!grouped.has(title)) {
+        grouped.set(title, {
+          title,
+          severity: finding.severity,
+          affectedEntities: new Set(),
+          confidence: [],
+          evidenceCount: 0,
+          hasEvidenceCount: false,
+          mitre: finding.mitreTechnique,
+          sample: finding.dataProvenance === 'sample'
+        })
       }
-      setEntities(entities || [])
-
-      if (Array.isArray(findings) && findings.length > 0) {
-        const map = new Map<string, { title: string; severity: any; affectedEntities: Set<string>; confidence: number[]; evidenceCount: number; mitre: string }>()
-        for (const f of findings) {
-          const key = f.title || f.finding || 'Behavioral divergence'
-          if (!map.has(key)) {
-            map.set(key, {
-              title: key,
-              severity: f.severity || 'High',
-              affectedEntities: new Set(),
-              confidence: [],
-              evidenceCount: 0,
-              mitre: f.mitreTechnique || 'T1059'
-            })
-          }
-          const item = map.get(key)!
-          if (f.entityId) item.affectedEntities.add(f.entityId)
-          if (f.confidence) item.confidence.push(f.confidence)
-          item.evidenceCount += (f.evidenceCount || 1)
-        }
-        const dynamicList = Array.from(map.values()).map(item => ({
-          title: item.title,
-          severity: item.severity,
-          affectedEntities: item.affectedEntities.size || 1,
-          confidence: item.confidence.length ? Math.round(item.confidence.reduce((a, b) => a + b, 0) / item.confidence.length) : 85,
-          evidenceCount: item.evidenceCount,
-          mitre: item.mitre
-        })).slice(0, 5)
-
-        if (dynamicList.length > 0) {
-          setConcerns(dynamicList)
-        }
+      const item = grouped.get(title)!
+      if (finding.entityId) item.affectedEntities.add(finding.entityId)
+      if (finding.confidence != null) item.confidence.push(finding.confidence)
+      if (finding.evidenceCount != null) {
+        item.evidenceCount += Number(finding.evidenceCount)
+        item.hasEvidenceCount = true
       }
-
-      setLoading(false)
-    })
-  }, [])
+      item.sample ||= finding.dataProvenance === 'sample'
+    }
+    const concerns = Array.from(grouped.values()).map(item => ({
+      title: item.title,
+      severity: item.severity,
+      affectedEntities: item.affectedEntities.size,
+      confidence: item.confidence.length ? Math.round(item.confidence.reduce((a, b) => a + b, 0) / item.confidence.length) : null,
+      evidenceCount: item.hasEvidenceCount ? item.evidenceCount : null,
+      mitre: item.mitre,
+      sample: item.sample
+    })).slice(0, 5)
+    return {
+      kpis: overview.kpis || [],
+      distribution: overview.distribution || [],
+      entities,
+      concerns,
+      health: apiHealth,
+      lastUpdated: new Date()
+    }
+  })
+  const kpis = resource.data?.kpis || []
+  const distribution = resource.data?.distribution || []
+  const entitiesList = resource.data?.entities || []
+  const concerns = resource.data?.concerns || []
+  const health = resource.data?.health
+  const lastUpdated = resource.data?.lastUpdated
 
   const openEntity = (id: string) => { 
     setSelectedEntity(id)
     setCurrentPage('entity') 
   }
   
-  const totalCSEs = kpis.find(k => k.label === 'CSEs Assessed')?.value || entitiesList.length || 11
+  const totalCSEs = kpis.find(k => k.label === 'CSEs Assessed')?.value
 
   // Functional filter logic for table
   const filteredEntities = entitiesList.filter(e => {
-    const score = e.riskScore ?? e.metrics?.riskScore ?? 0
+    const score = e.riskScore
     if (activeFilter === 'Critical Infra') return e.criticality === 'Critical'
     if (activeFilter === 'Banking & Finance') return e.sector === 'Banking'
     if (activeFilter === 'Energy & Power') return e.sector === 'Power' || e.sector === 'Energy'
     if (activeFilter === 'Telecom') return e.sector === 'Telecom'
-    if (activeFilter === 'High Risk') return score >= 60
-    if (activeFilter === 'Air-Gap Verified') return (e.dataCompleteness ?? 0) >= 90
+    if (activeFilter === 'High Risk') return Number.isFinite(score) && score >= 60
+    if (activeFilter === 'High Data Completeness') return Number.isFinite(e.dataCompleteness) && e.dataCompleteness >= 90
     return true
   })
 
@@ -99,30 +98,31 @@ export default function Overview() {
       e.id,
       `"${e.name}"`,
       e.sector,
-      e.riskScore ?? e.metrics?.riskScore ?? 0,
-      e.executionGaps ?? 0,
-      e.negativeSpace ?? 0,
-      e.priority ?? 'Normal',
-      e.status ?? 'Compliant'
+      e.riskScore ?? '',
+      e.executionGaps ?? '',
+      e.negativeSpace ?? '',
+      e.priority ?? 'Not assessed',
+      e.status ?? 'Not assessed'
     ])
-    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(r => r.join(','))].join('\n')
-    const encodedUri = encodeURI(csvContent)
-    const link = document.createElement('a')
-    link.setAttribute('href', encodedUri)
-    link.setAttribute('download', `SAT-SA_Overview_${activeFilter.replace(/\s+/g, '_')}.csv`)
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
+    downloadCSV(`SAT-SA_Overview_${activeFilter.replace(/\s+/g, '_')}`, headers, rows)
   }
 
+  if (resource.loading || resource.error || !resource.data) {
+    return <RequestState loading={resource.loading} error={resource.error} retry={resource.retry} retryInSeconds={resource.retryInSeconds} loadingMessage="Loading current assessment data…" />
+  }
   return (
     <div className="p-6 max-w-[1700px] mx-auto space-y-6">
+      {entitiesList.some(entity => entity.dataProvenance === 'sample') || concerns.some(item => item.sample) ? (
+        <div role="status" className="rounded border border-amber-300 bg-amber-50 px-4 py-2 text-xs font-medium text-amber-900">
+          Sample/demo data is present. It is not authoritative supervisory evidence.
+        </div>
+      ) : null}
       {/* Top Banner & Context Controls */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200 pb-4">
         <div>
           <div className="flex items-center gap-3">
             <h1 className="page-title text-xl font-bold tracking-tight text-slate-900">Overview</h1>
-            <TelemetryPulse active status="online" label="SYNCED" />
+            <TelemetryPulse active={health?.status === 'ok'} status={health?.status === 'ok' ? 'online' : 'offline'} label={health?.database === 'connected' ? 'DATABASE CONNECTED' : 'SOURCE STATUS UNKNOWN'} />
           </div>
           <p className="page-subtitle text-slate-400 text-xs mt-0.5">
             Supervisory risk assessment across critical entities.
@@ -130,15 +130,9 @@ export default function Overview() {
         </div>
         
         <div className="flex items-center gap-2">
-          {loading ? (
-            <div className="text-indigo-600 text-xs font-mono">
-              Loading...
-            </div>
-          ) : (
-            <div className="text-slate-400 text-xs font-mono">
-              <span>Synced: <span className="text-slate-800 font-semibold">{entitiesList.length} CSEs</span></span>
-            </div>
-          )}
+          <div className="text-slate-400 text-xs font-mono">
+            <span>{lastUpdated ? `Updated ${lastUpdated.toLocaleTimeString()}` : 'Current data'} · <span className="text-slate-800 font-semibold">{entitiesList.length} CSEs returned</span></span>
+          </div>
           <button 
             onClick={exportOverviewCSV}
             className="btn btn-sm flex items-center gap-1.5 text-slate-700 hover:text-slate-900"
@@ -199,7 +193,7 @@ export default function Overview() {
             <div>
               <div className="flex items-center justify-between mb-2">
                 <span className="label text-[10px] text-slate-400 uppercase font-mono">Fleet Risk Tier Stratification</span>
-                <span className="text-[11px] font-mono text-slate-400">Total: {totalCSEs} Monitored Entities</span>
+                <span className="text-[11px] font-mono text-slate-400">Total: {totalCSEs ?? 'Not reported'} Monitored Entities</span>
               </div>
               <StackedBar data={distribution.map(d => ({ level: d.level, count: d.count, color: d.color }))} />
             </div>
@@ -208,10 +202,11 @@ export default function Overview() {
               <div className="flex items-center justify-between mb-2.5">
                 <span className="label text-[10px] text-slate-400 uppercase font-mono">Top Supervisory Behavioral Concerns</span>
                 <span className="text-[11px] font-mono text-amber-600 flex items-center gap-1">
-                  <AlertTriangle className="w-3 h-3" /> 5 High-Impact Gaps Active
+                <AlertTriangle className="w-3 h-3" /> {concerns.length} Findings
                 </span>
               </div>
               <div className="space-y-2">
+                {concerns.length === 0 && <div className="p-4 text-center text-sm text-slate-500">No findings are recorded for this assessment.</div>}
                 {concerns.map((tc, idx) => (
                   <div 
                     key={idx}
@@ -222,7 +217,7 @@ export default function Overview() {
                       <span className="text-xs font-medium text-slate-700 truncate">{tc.title}</span>
                     </div>
                     <div className="flex items-center gap-3 shrink-0 text-xs font-mono">
-                      <span className="text-slate-400 hidden sm:inline">{tc.evidenceCount} evidence events</span>
+                      <span className="text-slate-400 hidden sm:inline">{tc.evidenceCount == null ? 'Evidence count not reported' : `${tc.evidenceCount} evidence events`}</span>
                       <span className="text-amber-600 font-semibold">{tc.affectedEntities} CSEs affected</span>
                       <ArrowUpRight className="w-3.5 h-3.5 text-slate-400" />
                     </div>
@@ -247,7 +242,7 @@ export default function Overview() {
                 value: d.count, 
                 color: d.color 
               }))} 
-              centerValue={String(totalCSEs)} 
+              centerValue={totalCSEs == null ? '—' : String(totalCSEs)} 
               centerLabel="CSEs"
               size={160}
               thickness={16}
@@ -291,10 +286,10 @@ export default function Overview() {
             </thead>
             <tbody>
               {[...filteredEntities]
-                .sort((a, b) => (b.riskScore ?? b.metrics?.riskScore ?? 0) - (a.riskScore ?? a.metrics?.riskScore ?? 0))
+                .sort((a, b) => (b.riskScore ?? -1) - (a.riskScore ?? -1))
                 .slice(0, 10)
                 .map((e: any) => {
-                  const score = e.riskScore ?? e.metrics?.riskScore ?? 0
+                  const score = e.riskScore
                   return (
                     <tr 
                       key={e.id} 
@@ -303,7 +298,7 @@ export default function Overview() {
                     >
                       <td className="font-mono text-indigo-600 font-bold">
                         <div className="flex items-center gap-2">
-                          <span className={`w-1.5 h-1.5 rounded-full ${score >= 80 ? 'bg-rose-400' : score >= 60 ? 'bg-amber-400' : 'bg-emerald-400'}`} />
+                          <span className={`w-1.5 h-1.5 rounded-full ${score == null ? 'bg-slate-300' : score >= 80 ? 'bg-rose-400' : score >= 60 ? 'bg-amber-400' : 'bg-emerald-400'}`} />
                           <span>{e.id}</span>
                           <span className="text-[11px] font-normal text-slate-400">({e.name})</span>
                         </div>
@@ -315,7 +310,7 @@ export default function Overview() {
                       </td>
                       <td>
                         <div className="flex items-center gap-2">
-                          <div className="risk-bar-track w-16 h-1.5">
+                          {score == null ? <span className="text-xs text-slate-400">Not assessed</span> : <div className="risk-bar-track w-16 h-1.5">
                             <div 
                               className={`risk-bar-fill ${
                                 score >= 85 ? 'bg-rose-500' :
@@ -325,13 +320,13 @@ export default function Overview() {
                               }`} 
                               style={{ width: `${Math.min(100, Math.max(5, score))}%` }} 
                             />
-                          </div>
-                          <span className="font-mono text-xs font-bold text-slate-700">{score}/100</span>
+                          </div>}
+                          {score != null && <span className="font-mono text-xs font-bold text-slate-700">{score}/100</span>}
                         </div>
                       </td>
-                      <td className="font-mono text-xs text-slate-700 text-center font-semibold">{e.executionGaps ?? 0}</td>
-                      <td className="font-mono text-xs text-slate-600 text-center">{e.negativeSpace ?? 0}</td>
-                      <td><StatusBadge status={e.priority} /></td>
+                      <td className="font-mono text-xs text-slate-700 text-center font-semibold">{e.executionGaps ?? '—'}</td>
+                      <td className="font-mono text-xs text-slate-600 text-center">{e.negativeSpace ?? '—'}</td>
+                      <td>{e.priority ? <StatusBadge status={e.priority} /> : <span className="text-xs text-slate-400">Not assessed</span>}</td>
                       <td className="text-right">
                         <button className="text-[11.5px] font-mono text-indigo-600 hover:underline">
                           Investigate →

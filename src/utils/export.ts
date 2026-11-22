@@ -8,18 +8,7 @@ export function downloadCSV(
   headers: string[],
   rows: (string | number | boolean | null | undefined)[][]
 ): void {
-  const escapeCell = (cell: any): string => {
-    if (cell === null || cell === undefined) return '""'
-    const str = String(cell)
-    if (str.includes(',') || str.includes('"') || str.includes('\n')) {
-      return `"${str.replace(/"/g, '""')}"`
-    }
-    return str
-  }
-
-  const headerLine = headers.map(escapeCell).join(',')
-  const rowLines = rows.map(r => r.map(escapeCell).join(','))
-  const csvContent = [headerLine, ...rowLines].join('\r\n')
+  const csvContent = serializeCSV(headers, rows)
 
   const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
   const url = URL.createObjectURL(blob)
@@ -29,7 +18,21 @@ export function downloadCSV(
   document.body.appendChild(link)
   link.click()
   document.body.removeChild(link)
-  URL.revokeObjectURL(url)
+  window.setTimeout(() => URL.revokeObjectURL(url), 0)
+}
+
+export function serializeCSV(
+  headers: string[],
+  rows: (string | number | boolean | null | undefined)[][]
+): string {
+  const escapeCell = (cell: string | number | boolean | null | undefined): string => {
+    let value = cell == null ? '' : String(cell)
+    if (typeof cell === 'string' && (/^[\u0000-\u0020]*[=+\-@]/.test(value) || /^[\t\r\n]/.test(value))) {
+      value = `'${value}`
+    }
+    return `"${value.replace(/"/g, '""')}"`
+  }
+  return [headers.map(escapeCell).join(','), ...rows.map(row => row.map(escapeCell).join(','))].join('\r\n')
 }
 
 export function downloadJSON(filename: string, data: any): void {

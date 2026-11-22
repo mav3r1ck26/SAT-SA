@@ -1,11 +1,12 @@
 import { Router, Response } from 'express'
+import { safeErrorMessage } from '../services/errorHandling'
 import { Finding } from '../models/Finding'
 import { EntityMetric } from '../models/EntityMetric'
 
 const router = Router()
 
 function handleError(err: unknown, res: Response) {
-  const message = err instanceof Error ? err.message : 'Unknown error'
+  const message = safeErrorMessage(err, 500)
   res.status(500).json({ success: false, error: { code: 'INTERNAL_ERROR', message } })
 }
 

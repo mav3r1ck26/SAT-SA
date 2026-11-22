@@ -4,27 +4,47 @@ import { fetchBenchmark, fetchEntities } from '../api/client'
 import { downloadCSV } from '../utils/export'
 import { TelemetryPulse } from '../components/ui'
 import { BarChart3, ChevronRight, Download, Sliders, Shield, Award } from 'lucide-react'
+import { useApiResource } from '../hooks/useApiResource'
+import RequestState from '../components/RequestState'
 
 export default function PeerBenchmarking() {
-  const { setSelectedEntity, setCurrentPage } = useApp()
-  const [compEntity, setCompEntity] = useState('CSE-014')
-  const [entitiesList, setEntities] = useState<any[]>([])
-  const [benchmarkData, setBenchmarkData] = useState<any[]>([])
-  const [loading, setLoading] = useState(false)
+  const { setSelectedEntity, setCurrentPage, selectedEntity, assessmentPeriod } = useApp()
+  const [compEntity, setCompEntity] = useState(selectedEntity || '')
+  const entitiesResource = useApiResource(`benchmark-entities:${assessmentPeriod}`, signal =>
+    fetchEntities({ period: assessmentPeriod }, signal)
+  )
+  const entitiesList = entitiesResource.data || []
+  const benchmarkResource = useApiResource(`benchmark:${compEntity}:${assessmentPeriod}`, signal =>
+    compEntity ? fetchBenchmark(compEntity, assessmentPeriod, signal) : Promise.resolve([])
+  )
+  const benchmarkData = benchmarkResource.data || []
 
   useEffect(() => {
-    fetchEntities().then(setEntities).catch(() => setEntities([]))
-  }, [])
+    if (!entitiesResource.data) return
+    setCompEntity(current => entitiesResource.data!.some(entity => entity.id === current)
+      ? current
+      : entitiesResource.data![0]?.id || '')
+  }, [entitiesResource.data])
 
-  useEffect(() => {
-    setLoading(true)
-    fetchBenchmark(compEntity)
-      .then(d => { setBenchmarkData(Array.isArray(d) ? d : []); setLoading(false) })
-      .catch(() => { setBenchmarkData([]); setLoading(false) })
-  }, [compEntity])
+  const resourceError = entitiesResource.error || benchmarkResource.error
+  const retryResource = entitiesResource.error ? entitiesResource : benchmarkResource
+  const loading = entitiesResource.loading || benchmarkResource.loading
+  if (loading || resourceError || !entitiesResource.data || !benchmarkResource.data) {
+    return <RequestState
+      loading={loading}
+      error={resourceError}
+      retry={retryResource.retry}
+      retryInSeconds={retryResource.retryInSeconds}
+      loadingMessage="Loading period-specific peer benchmarks…"
+    />
+  }
+
+  if (entitiesList.length === 0) {
+    return <div role="status" className="m-6 rounded border border-slate-200 bg-white p-5 text-sm text-slate-600">No entities are available for the selected assessment period.</div>
+  }
 
   const entity = entitiesList.find(e => e.id === compEntity)
-  const compSector = entity?.sector || 'Power & Energy'
+  const compSector = entity?.sector || 'Not reported'
 
   const getBarColor = (percentile: number) => {
     if (percentile >= 85) return 'bg-rose-600 shadow-sm'
@@ -40,8 +60,8 @@ export default function PeerBenchmarking() {
       b.metric,
       b.entityDisplay || b.entityValue,
       b.peerMedianDisplay || b.peerMedian,
-      b.percentile ?? 50,
-      b.assessment || 'Normal'
+      b.percentile ?? '',
+      b.assessment || ''
     ])
     downloadCSV(`SAT-SA_Benchmark_${compEntity}_${new Date().toISOString().slice(0, 10)}`, headers, rows)
   }
@@ -106,16 +126,17 @@ export default function PeerBenchmarking() {
             </div>
           ) : (
             <div className="space-y-4">
+              {benchmarkData.length === 0 && <p role="status" className="text-sm text-slate-500">No peer benchmark metrics are available for this entity and assessment period.</p>}
               {benchmarkData.map((m: any, i: number) => (
                 <div key={i} className="grid grid-cols-1 md:grid-cols-[220px_1fr_100px_100px_80px] items-center gap-4 bg-white p-3.5 rounded-lg border border-slate-200 hover:border-slate-300 transition-colors">
                   <div>
                     <div className="text-xs font-bold text-slate-700">{m.metric}</div>
-                    <div className="text-[10.5px] font-mono text-slate-600 mt-0.5">{m.assessment || 'Variance detected'}</div>
+                    <div className="text-[10.5px] font-mono text-slate-600 mt-0.5">{m.assessment || 'Assessment not reported'}</div>
                   </div>
 
                   <div className="space-y-1">
                     <div className="risk-bar-track h-2 bg-slate-100">
-                      <div className={`risk-bar-fill ${getBarColor(m.percentile)}`} style={{ width: `${Math.min(100, Math.max(5, m.percentile))}%` }} />
+                      {Number.isFinite(m.percentile) && <div className={`risk-bar-fill ${getBarColor(m.percentile)}`} style={{ width: `${Math.min(100, Math.max(5, m.percentile))}%` }} />}
                     </div>
                     <div className="flex justify-between text-[9.5px] font-mono text-slate-400">
                       <span>0th (Deficient)</span>
@@ -126,20 +147,20 @@ export default function PeerBenchmarking() {
 
                   <div className="text-right">
                     <div className="text-[10px] uppercase font-mono text-slate-600">Observed</div>
-                    <div className="mono-id text-indigo-600 font-bold">{m.entityDisplay}</div>
+                    <div className="mono-id text-indigo-600 font-bold">{m.entityDisplay ?? 'Not available'}</div>
                   </div>
 
                   <div className="text-right">
                     <div className="text-[10px] uppercase font-mono text-slate-600">Cohort Median</div>
-                    <div className="text-xs font-mono text-slate-600 font-semibold">{m.peerMedianDisplay}</div>
+                    <div className="text-xs font-mono text-slate-600 font-semibold">{m.peerMedianDisplay ?? 'Not available'}</div>
                   </div>
 
                   <div className="text-right">
                     <div className="text-[10px] uppercase font-mono text-slate-600">Ranking</div>
                     <span className={`font-mono text-xs font-bold ${
-                      m.percentile <= 20 ? 'text-emerald-600' : m.percentile >= 80 ? 'text-rose-600' : 'text-indigo-600'
+                      !Number.isFinite(m.percentile) ? 'text-slate-500' : m.percentile <= 20 ? 'text-emerald-600' : m.percentile >= 80 ? 'text-rose-600' : 'text-indigo-600'
                     }`}>
-                      {m.percentile}th %ile
+                      {Number.isFinite(m.percentile) ? `${m.percentile}th %ile` : 'Not available'}
                     </span>
                   </div>
                 </div>
@@ -151,7 +172,7 @@ export default function PeerBenchmarking() {
             <div className="mt-6 pt-5 border-t border-slate-200">
               <div className="label mb-3 text-indigo-600 font-mono">Statistical Outlier Detections (&gt;2.5σ Deviation)</div>
               <div className="space-y-2">
-                {benchmarkData.filter((m: any) => m.percentile <= 15 || m.percentile >= 85).map((m: any, i: number) => (
+                {benchmarkData.filter((m: any) => Number.isFinite(m.percentile) && (m.percentile <= 15 || m.percentile >= 85)).map((m: any, i: number) => (
                   <div key={i} className="flex items-center gap-3 p-2.5 rounded-md bg-white border border-slate-200 text-xs">
                     <span className={`badge border text-[10px] font-mono ${
                       m.percentile >= 85 
@@ -165,6 +186,9 @@ export default function PeerBenchmarking() {
                     </span>
                   </div>
                 ))}
+                {!benchmarkData.some((m: any) => Number.isFinite(m.percentile) && (m.percentile <= 15 || m.percentile >= 85)) && (
+                  <p className="text-sm text-slate-500">No outliers were reported for the selected entity and period.</p>
+                )}
               </div>
             </div>
           )}

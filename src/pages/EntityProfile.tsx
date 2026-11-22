@@ -2,89 +2,88 @@ import React, { useState, useEffect } from 'react'
 import { useApp } from '../context/AppContext'
 import { RiskScoreGauge, SeverityBadge, Confidence, TelemetryPulse, MitreBadge } from '../components/ui'
 import { AreaChart, Radar, ScoreBars } from '../components/charts'
-import { fetchEntity, fetchEntities, fetchEntityAssessmentHistory, fetchFindings, fetchEvidenceTimeline, fetchBenchmark, saveEntityAssessment } from '../api/client'
+import { fetchEntity, fetchEntities, fetchEntityAssessmentHistory, fetchFindings, fetchEntityEvidenceTimeline, fetchBenchmark, saveEntityAssessment } from '../api/client'
 import { downloadCSV } from '../utils/export'
 import { ChevronLeft, Shield, Clock, FileText, Activity, AlertOctagon, CheckCircle2, AlertTriangle, Database, Download, ArrowRight, BarChart3 } from 'lucide-react'
+import { useApiResource } from '../hooks/useApiResource'
+import RequestState from '../components/RequestState'
 
 const tabs = ['Overview', 'Peer Benchmarking', 'Detection & Triage', 'Investigation Rigor', 'Escalation Compliance', 'Forensic Evidence']
-
-const fallbackTimeline = [
-  { event: 'Alert generated — firewall anomalous traffic', actor: 'SIEM-Correlator', role: 'Detection', time: '14:23:17', metadata: ['Rule: T1059.001', 'Source: Edge Firewall'], severity: 'Critical' },
-  { event: 'SOC analyst assigned', actor: 'SOC-L2-004', role: 'Triage Analyst', time: '14:24:53', metadata: ['Queue: Tier-1 Triage'], severity: 'Low' },
-  { event: 'Preliminary investigation opened', actor: 'SOC-L2-004', role: 'Triage Analyst', time: '14:26:09', metadata: ['Target: SCADA-HMI-01'], severity: 'Low' },
-  { event: 'Alert closed as false positive (<5m)', actor: 'SOC-L2-004', role: 'Triage Analyst', time: '14:31:02', metadata: ['Duration: 4.9 min', 'Superficial closure'], severity: 'High' },
-  { event: 'Supervisory peer baseline check', actor: 'SAT-SA Engine', role: 'Automated Audit', time: '14:31:02', metadata: ['Peer Median: 42 min', 'Deviation: 3.8σ'], severity: 'Critical' },
-  { event: 'No statutory escalation recorded', actor: 'SAT-SA Auditor', role: 'Supervisory Rule', time: '—', metadata: ['Breach: CERT-In 6h Mandate'], severity: 'Critical' },
-  { event: 'Audit log entry immutable', actor: 'Audit Journal', role: 'Compliance', time: '14:31:03', metadata: ['SHA-256 Validated'], severity: 'Low' }
-]
 
 export default function EntityProfile() {
   const { selectedEntity, setSelectedEntity, setCurrentPage, assessmentPeriod } = useApp()
   const [activeTab, setActiveTab] = useState('Overview')
-  const [entity, setEntity] = useState<any>(null)
-  const [loading, setLoading] = useState(true)
-  const [loadError, setLoadError] = useState('')
-  const [reloadKey, setReloadKey] = useState(0)
-  const [fleet, setFleet] = useState<any[]>([])
-  const [findings, setFindings] = useState<any[]>([])
-  const [timeline, setTimeline] = useState<any[]>([])
-  const [benchmarkData, setBenchmarkData] = useState<any[]>([])
-  const [assessmentHistory, setAssessmentHistory] = useState<any[]>([])
   const [assessmentDraft, setAssessmentDraft] = useState<Record<string, number | ''>>({})
   const [savingAssessment, setSavingAssessment] = useState(false)
   const [assessmentSaveMessage, setAssessmentSaveMessage] = useState('')
-  const entityId = selectedEntity || 'CSE-014'
+  const entityId = selectedEntity || ''
 
-  useEffect(() => {
-    fetchEntities().then(setFleet).catch(() => {})
-  }, [])
-
-  useEffect(() => {
-    let active = true
-    setEntity(null)
-    setLoading(true)
-    setLoadError('')
-    fetchEntity(entityId, assessmentPeriod)
-      .then(result => {
-        if (!active) return
-        setEntity(result)
-        setAssessmentDraft(Object.fromEntries((result.assessment?.dimensions || []).map((dimension: any) => [dimension.key, dimension.score ?? ''])))
+  const entityResource = useApiResource(`entity:${entityId}:${assessmentPeriod}`, signal =>
+    entityId ? fetchEntity(entityId, assessmentPeriod, signal) : Promise.resolve(null)
+  )
+  const fleetResource = useApiResource('entity-fleet', signal => fetchEntities(undefined, signal))
+  const detailResource = useApiResource(`entity-details:${entityId}:${assessmentPeriod}`, async signal => {
+    if (!entityId) return { findings: [], timeline: [], assessmentHistory: [], benchmarkData: [] }
+    const [history, findings, benchmarkData, evidence] = await Promise.all([
+      fetchEntityAssessmentHistory(entityId, signal),
+      fetchFindings({ entityId, period: assessmentPeriod }, signal),
+      fetchBenchmark(entityId, assessmentPeriod, signal),
+      fetchEntityEvidenceTimeline(entityId, assessmentPeriod, signal)
+    ])
+    return {
+      assessmentHistory: Array.isArray(history?.history) ? history.history : [],
+      findings,
+      benchmarkData: Array.isArray(benchmarkData) ? benchmarkData : [],
+      timeline: (evidence.timeline || []).map((event: any) => {
+        const severityValue = (event.metadata || []).find((item: string) => item.startsWith('Severity:'))?.split(':')[1]?.trim()
+        return {
+          ...event,
+          time: event.eventTime ? new Date(event.eventTime).toLocaleString() : '—',
+          meta: event.metadata || [],
+          severity: severityValue || (event.eventType === 'Escalation' ? 'High' : 'Low')
+        }
       })
-      .catch(error => { if (active) setLoadError(error instanceof Error ? error.message : 'Entity request failed') })
-      .finally(() => { if (active) setLoading(false) })
-    fetchEntityAssessmentHistory(entityId)
-      .then(result => { if (active) setAssessmentHistory(Array.isArray(result?.history) ? result.history : []) })
-      .catch(() => { if (active) setAssessmentHistory([]) })
-    fetchFindings({ entityId }).then(setFindings).catch(() => setFindings([]))
-    fetchBenchmark(entityId)
-      .then(d => setBenchmarkData(Array.isArray(d) ? d : []))
-      .catch(() => setBenchmarkData([]))
-    fetchEvidenceTimeline(entityId)
-      .then(r => setTimeline(r.timeline && r.timeline.length ? r.timeline : fallbackTimeline))
-      .catch(() => setTimeline(fallbackTimeline))
-    return () => { active = false }
-  }, [entityId, assessmentPeriod, reloadKey])
+    }
+  })
+  const entity = entityResource.data
+  const fleet = fleetResource.data || []
+  const findings = detailResource.data?.findings || []
+  const timeline = detailResource.data?.timeline || []
+  const benchmarkData = detailResource.data?.benchmarkData || []
+  const assessmentHistory = detailResource.data?.assessmentHistory || []
 
-  if (!entity && loading) return (
-    <div className="p-8 max-w-[1700px] mx-auto text-center space-y-3">
-      <div className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-50 border border-slate-300 text-indigo-600 font-mono text-xs">
-        <Activity className="w-4 h-4 animate-spin" /> Ingesting Entity Telemetry for {entityId}...
-      </div>
-    </div>
-  )
-  if (!entity) return (
+  useEffect(() => {
+    if (!entity) return
+    setAssessmentDraft(Object.fromEntries((entity.assessment?.dimensions || []).map((dimension: any) => [dimension.key, dimension.score ?? ''])))
+  }, [entity])
+
+  if (!entityId) return (
     <div className="p-8 max-w-[1700px] mx-auto text-center space-y-4">
-      <div className="text-sm font-semibold text-slate-800">Could not load entity {entityId}</div>
-      <p className="text-xs font-mono text-rose-600">{loadError || 'The API did not return this entity.'}</p>
-      <div className="flex justify-center gap-2">
-        <button className="btn btn-sm" onClick={() => setReloadKey(key => key + 1)}>Retry</button>
-        <button className="btn btn-sm" onClick={() => setCurrentPage('entities')}>Return to Entity Fleet</button>
-      </div>
+      <div className="text-sm font-semibold text-slate-800">Select an entity to view its assessment.</div>
+      <button className="btn btn-sm" onClick={() => setCurrentPage('entities')}>Return to Entity Fleet</button>
     </div>
   )
+  if (entityResource.loading || entityResource.error || !entity) return (
+    <RequestState
+      loading={entityResource.loading}
+      error={entityResource.error}
+      retry={entityResource.retry}
+      retryInSeconds={entityResource.retryInSeconds}
+      loadingMessage={`Loading entity ${entityId} assessment…`}
+    />
+  )
+  if (detailResource.loading || detailResource.error || !detailResource.data) return (
+    <RequestState
+      loading={detailResource.loading}
+      error={detailResource.error}
+      retry={detailResource.retry}
+      retryInSeconds={detailResource.retryInSeconds}
+      loadingMessage={`Loading ${entityId} findings and evidence…`}
+    />
+  )
 
-  const riskScore = entity.riskScore ?? entity.metrics?.riskScore ?? 50
-  const completeness = entity.dataCompleteness ?? 85
+  const riskScore = entity.riskScore ?? entity.metrics?.riskScore ?? null
+  const completeness = entity.dataCompleteness ?? null
   const assessment = entity.assessment
 
   const handleSaveAssessment = async () => {
@@ -94,7 +93,7 @@ export default function EntityProfile() {
       const numericScores = Object.fromEntries(Object.entries(assessmentDraft).map(([key, value]) => [key, Number(value)])) as Record<string, number>
       await saveEntityAssessment(entityId, assessmentPeriod, numericScores)
       setAssessmentSaveMessage(`Assessment saved for ${assessmentPeriod}.`)
-      setReloadKey(key => key + 1)
+      entityResource.retry()
     } catch (error) {
       setAssessmentSaveMessage(error instanceof Error ? error.message : 'Could not save assessment.')
     } finally {
@@ -121,12 +120,31 @@ export default function EntityProfile() {
     document.body.removeChild(link)
   }
 
-  const detectionScore = entity.threatDetection ?? entity.metrics?.threatDetection ?? 70
-  const investigationScore = entity.investigation ?? entity.metrics?.investigation ?? 65
-  const escalationScore = entity.escalation ?? entity.metrics?.escalation ?? 68
+  const detectionScore = entity.threatDetection ?? entity.metrics?.threatDetection ?? null
+  const investigationScore = entity.investigation ?? entity.metrics?.investigation ?? null
+  const escalationScore = entity.escalation ?? entity.metrics?.escalation ?? null
+  const metricValues = [
+    detectionScore,
+    investigationScore,
+    escalationScore,
+    entity.incidentResponse ?? entity.metrics?.incidentResponse ?? null,
+    entity.securityOperations ?? entity.metrics?.securityOperations ?? null,
+    entity.governanceOversight ?? entity.metrics?.governanceOversight ?? null,
+    entity.operationalDiscipline ?? entity.metrics?.operationalDiscipline ?? null,
+    entity.cyberResilience ?? entity.metrics?.cyberResilience ?? null
+  ]
+  const hasCompleteMetrics = metricValues.every((value): value is number => typeof value === 'number' && Number.isFinite(value))
 
   return (
     <div className="p-6 max-w-[1700px] mx-auto space-y-5">
+      {fleetResource.error && (
+        <div role="alert" className="rounded border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">
+          Could not load the entity switcher: {fleetResource.error.message}
+          <button className="btn btn-sm ml-3" disabled={fleetResource.retryInSeconds > 0} onClick={fleetResource.retry}>
+            {fleetResource.retryInSeconds > 0 ? `Retry in ${fleetResource.retryInSeconds}s` : 'Retry'}
+          </button>
+        </div>
+      )}
       {/* Back and Switcher Bar */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <button 
@@ -168,26 +186,27 @@ export default function EntityProfile() {
               <h1 className="text-lg font-bold text-slate-900 tracking-tight">
                 {entity.name}
               </h1>
-              <TelemetryPulse active status="online" label="ACTIVE AUDIT" />
+              <TelemetryPulse active={Boolean(entity.lastSubmission)} status={entity.lastSubmission ? 'online' : 'offline'} label={entity.lastSubmission ? 'SUBMISSION RECEIVED' : 'NO SUBMISSION STATUS'} />
             </div>
 
             <div className="flex flex-wrap items-center gap-x-6 gap-y-1.5 text-xs font-mono text-slate-400">
               <span>Sector: <strong className="text-slate-700">{entity.sector}</strong></span>
-              <span>Assessment Period: <strong className="text-slate-700">{entity.assessmentPeriod || assessmentPeriod}</strong></span>
-              <span>Supervisory Tier: <strong className="text-amber-600">{entity.criticality || 'Tier 1 - Critical'}</strong></span>
-              <span>Audit Status: <strong className="text-emerald-600">{entity.status || 'Compliant'}</strong></span>
-              <span>Last Telemetry Sync: <strong className="text-slate-600">{entity.lastSubmission ? new Date(entity.lastSubmission).toLocaleDateString() : '2026-09-24'}</strong></span>
+              <span>Assessment Period: <strong className="text-slate-700">{assessmentPeriod}</strong></span>
+              <span>Criticality: <strong className="text-amber-600">{entity.criticality || 'Not recorded'}</strong></span>
+              <span>Assessment Status: <strong className="text-slate-600">{entity.status || 'Not recorded'}</strong></span>
+              <span>Last Submission: <strong className="text-slate-600">{entity.lastSubmission ? new Date(entity.lastSubmission).toLocaleDateString() : 'Not recorded'}</strong></span>
+              {entity.dataProvenance === 'sample' && <span className="rounded border border-amber-300 bg-amber-50 px-2 py-1 text-amber-800">SAMPLE / DEMO DATA</span>}
             </div>
           </div>
 
           <div className="flex items-center gap-4 bg-white p-3 rounded-lg border border-slate-200">
             <div className="text-right">
               <div className="label text-[10px] text-slate-400 mb-0.5">Telemetry Completeness</div>
-              <div className="font-mono text-sm font-bold text-indigo-600">{completeness}%</div>
-              <div className="text-[10px] text-slate-400 font-mono">Air-Gap Verified</div>
+              <div className="font-mono text-sm font-bold text-indigo-600">{completeness == null ? '—' : `${completeness}%`}</div>
+              <div className="text-[10px] text-slate-400 font-mono">Reported completeness</div>
             </div>
             <div className="w-10 h-10 rounded-full border border-slate-300 flex items-center justify-center bg-slate-50 text-indigo-600 font-mono text-xs font-bold">
-              {completeness}%
+              {completeness == null ? '—' : `${completeness}%`}
             </div>
           </div>
         </div>
@@ -355,26 +374,28 @@ export default function EntityProfile() {
             <div className="card p-5">
               <div className="label text-[10px] text-slate-400 uppercase font-mono mb-2 flex items-center justify-between">
                 <span>Supervisory Risk Score</span>
-                <span className="text-indigo-600">SAT-SA v{assessment?.frameworkVersion || '1.0.0'}</span>
+                <span className="text-indigo-600">{assessment ? `Framework v${assessment.frameworkVersion}` : 'Assessment not available'}</span>
               </div>
               
               <div className="flex justify-center py-2">
-                <RiskScoreGauge score={riskScore} />
+                {riskScore == null ? <div className="py-8 text-center text-sm text-slate-500">Risk score not recorded for this period.</div> : <RiskScoreGauge score={riskScore} />}
               </div>
               <p className="text-[10px] text-slate-500 leading-relaxed">{assessment?.riskScoreDefinition || 'Supervisory risk is an attention indicator and is distinct from the maturity score.'}</p>
 
               <div className="mt-4 pt-4 border-t border-slate-200">
                 <div className="label text-[10px] text-slate-400 uppercase font-mono mb-2">Capability Sub-Scores</div>
-                <ScoreBars data={[
-                  { label: 'Threat Detection', value: detectionScore },
-                  { label: 'Investigation Rigor', value: investigationScore },
-                  { label: 'Escalation Protocol', value: escalationScore },
-                  { label: 'Incident Response', value: entity.incidentResponse ?? entity.metrics?.incidentResponse ?? 50 },
-                  { label: 'SecOps Cadence', value: entity.securityOperations ?? entity.metrics?.securityOperations ?? 60 },
-                  { label: 'Gov. & Oversight', value: entity.governanceOversight ?? entity.metrics?.governanceOversight ?? 65 },
-                  { label: 'Operational Discipline', value: entity.operationalDiscipline ?? entity.metrics?.operationalDiscipline ?? 50 },
-                  { label: 'Cyber Resilience', value: entity.cyberResilience ?? entity.metrics?.cyberResilience ?? 70 }
-                ]} />
+                {!hasCompleteMetrics
+                  ? <div className="py-6 text-center text-sm text-slate-500">Assessment metrics are incomplete for this period.</div>
+                  : <ScoreBars data={[
+                  { label: 'Threat Detection', value: metricValues[0] as number },
+                  { label: 'Investigation Rigor', value: metricValues[1] as number },
+                  { label: 'Escalation Protocol', value: metricValues[2] as number },
+                  { label: 'Incident Response', value: metricValues[3] as number },
+                  { label: 'SecOps Cadence', value: metricValues[4] as number },
+                  { label: 'Gov. & Oversight', value: metricValues[5] as number },
+                  { label: 'Operational Discipline', value: metricValues[6] as number },
+                  { label: 'Cyber Resilience', value: metricValues[7] as number }
+                ]} />}
               </div>
             </div>
 
@@ -386,11 +407,11 @@ export default function EntityProfile() {
               </div>
               <div className="flex justify-between py-1 border-b border-slate-200">
                 <span className="text-slate-400">Blind Spots Identified</span>
-                <span className="text-amber-600 font-bold">{entity.negativeSpace ?? 2} areas</span>
+                <span className="text-amber-600 font-bold">{entity.negativeSpace ?? 'Not recorded'}</span>
               </div>
               <div className="flex justify-between py-1">
-                <span className="text-slate-400">Air-Gap SHA-256</span>
-                <span className="text-slate-400 text-[10px]">9f83a...bc41e</span>
+                <span className="text-slate-400">Evidence integrity</span>
+                <span className="text-slate-400 text-[10px]">Not verified</span>
               </div>
             </div>
           </div>
@@ -402,16 +423,18 @@ export default function EntityProfile() {
                 <span className="text-slate-400">Supervisory Baseline vs Observed Telemetry</span>
               </div>
               <div className="flex justify-center py-2">
-                <Radar data={[
-                  { label: 'Detection', value: detectionScore },
-                  { label: 'Investigation', value: investigationScore },
-                  { label: 'Escalation', value: escalationScore },
-                  { label: 'Incident Response', value: entity.incidentResponse ?? 50 },
-                  { label: 'Operations', value: entity.securityOperations ?? 60 },
-                  { label: 'Governance', value: entity.governanceOversight ?? 65 },
-                  { label: 'Discipline', value: entity.operationalDiscipline ?? entity.metrics?.operationalDiscipline ?? 50 },
-                  { label: 'Resilience', value: entity.cyberResilience ?? 70 }
-                ]} />
+                {hasCompleteMetrics
+                  ? <Radar data={[
+                      { label: 'Detection', value: metricValues[0] as number },
+                      { label: 'Investigation', value: metricValues[1] as number },
+                      { label: 'Escalation', value: metricValues[2] as number },
+                      { label: 'Incident Response', value: metricValues[3] as number },
+                      { label: 'Operations', value: metricValues[4] as number },
+                      { label: 'Governance', value: metricValues[5] as number },
+                      { label: 'Discipline', value: metricValues[6] as number },
+                      { label: 'Resilience', value: metricValues[7] as number }
+                    ]} />
+                  : <div className="py-8 text-sm text-slate-500">No complete metric profile is available for this period.</div>}
               </div>
             </div>
 
@@ -424,7 +447,7 @@ export default function EntityProfile() {
                     Key Supervisory Findings for {entity.id}
                   </div>
                   <div className="card-subtitle text-xs text-slate-400">
-                    Definitive operational evidence divergences from established control baselines
+                    Findings recorded for this assessment period.
                   </div>
                 </div>
                 <span className="badge text-xs font-mono bg-rose-50 text-rose-600 border-rose-200">
@@ -443,9 +466,9 @@ export default function EntityProfile() {
                         {f.mitreTechnique && <MitreBadge techniqueId={f.mitreTechnique} name={f.mitreTechnique} />}
                       </div>
                       <div className="flex items-center gap-3">
-                        <Confidence value={f.confidence || 85} compact />
+                        {f.confidence == null ? <span className="text-xs text-slate-500">Confidence not assessed</span> : <Confidence value={f.confidence} compact />}
                         <span className="text-xs font-mono text-slate-400 bg-slate-50 px-2 py-0.5 rounded border border-slate-200">
-                          {f.evidenceCount || 4} evidence items
+                          {f.evidenceCount == null ? 'Evidence count not recorded' : `${f.evidenceCount} evidence items`}
                         </span>
                       </div>
                     </div>
@@ -473,7 +496,7 @@ export default function EntityProfile() {
                 Cross-Sector Peer Benchmarking ({entity.id} vs {entity.sector} Baseline)
               </div>
               <div className="card-subtitle text-xs text-slate-400">
-                Statistical percentile distribution and Gaussian peer deviation within the <strong className="text-indigo-600">{entity.sector}</strong> critical sector cohort
+                Percentiles based on recorded assessment-period data for the <strong className="text-indigo-600">{entity.sector}</strong> cohort.
               </div>
             </div>
 
@@ -485,8 +508,8 @@ export default function EntityProfile() {
                   b.metric,
                   b.entityDisplay || b.entityValue,
                   b.peerMedianDisplay || b.peerMedian,
-                  b.percentile ?? 50,
-                  b.assessment || 'Normal'
+                  b.percentile ?? '',
+                  b.assessment || 'Not available'
                 ])
                 downloadCSV(`SAT-SA_Benchmark_${entity.id}_${new Date().toISOString().slice(0, 10)}`, headers, rows)
               }}
@@ -498,8 +521,8 @@ export default function EntityProfile() {
 
           <div className="space-y-4">
             {benchmarkData.map((b: any, i: number) => {
-              const pct = b.percentile ?? 50
-              const barColor = pct >= 85 ? 'bg-rose-500' : pct >= 70 ? 'bg-amber-500' : pct >= 40 ? 'bg-cyan-500' : 'bg-emerald-500'
+              const pct = b.percentile
+              const barColor = pct == null ? 'bg-slate-300' : pct >= 85 ? 'bg-rose-500' : pct >= 70 ? 'bg-amber-500' : pct >= 40 ? 'bg-cyan-500' : 'bg-emerald-500'
               return (
                 <div key={i} className="p-4 rounded-lg bg-white border border-slate-200 space-y-2.5">
                   <div className="flex flex-wrap items-center justify-between gap-2">
@@ -512,7 +535,7 @@ export default function EntityProfile() {
                       <span className="text-slate-400">|</span>
                       <span>Sector Median: <strong className="text-slate-600">{b.peerMedianDisplay || b.peerMedian}</strong></span>
                       <span className="px-2 py-0.5 rounded bg-slate-50 border border-slate-300 text-indigo-600 font-bold">
-                        {pct}th %ile
+                        {pct == null ? 'Insufficient data' : `${pct}th %ile`}
                       </span>
                     </div>
                   </div>
@@ -522,10 +545,10 @@ export default function EntityProfile() {
                     <div className="h-2.5 w-full bg-slate-50 rounded-full overflow-hidden border border-slate-200 relative">
                       {/* 50th percentile median marker */}
                       <div className="absolute top-0 bottom-0 left-1/2 w-0.5 bg-slate-600 z-10" title="Sector Median (50th percentile)" />
-                      <div 
-                        className={`h-full rounded-full transition-all duration-500 ${barColor}`} 
-                        style={{ width: `${Math.max(4, Math.min(100, pct))}%` }} 
-                      />
+                      {pct != null && <div
+                        className={`h-full rounded-full transition-all duration-500 ${barColor}`}
+                        style={{ width: `${Math.max(4, Math.min(100, pct))}%` }}
+                      />}
                     </div>
                     <div className="flex justify-between text-[10px] font-mono text-slate-400">
                       <span>0th (Sector Min)</span>
@@ -539,7 +562,7 @@ export default function EntityProfile() {
 
             {benchmarkData.length === 0 && (
               <div className="p-8 text-center text-xs font-mono text-slate-400">
-                Ingesting sector cohort distribution data for {entity.id}...
+                No period-specific benchmark data is available for {entity.id}.
               </div>
             )}
           </div>
@@ -566,23 +589,23 @@ export default function EntityProfile() {
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 font-mono text-xs">
             <div className="p-3 bg-white rounded-lg border border-slate-200">
               <span className="text-slate-400">Detection Capability Score:</span>
-              <div className="text-lg font-bold text-indigo-600 mt-1">{detectionScore}/100</div>
+              <div className="text-lg font-bold text-indigo-600 mt-1">{detectionScore == null ? '—' : `${detectionScore}/100`}</div>
             </div>
             <div className="p-3 bg-white rounded-lg border border-slate-200">
               <span className="text-slate-400">Mean Triage Duration:</span>
               <div className="text-lg font-bold text-slate-700 mt-1">
-                {entity.operationalMetrics?.meanTriageDuration || '4.2 minutes'}
+                {entity.operationalMetrics?.meanTriageDuration == null ? 'Not available' : `${entity.operationalMetrics.meanTriageDuration} minutes`}
               </div>
             </div>
             <div className="p-3 bg-white rounded-lg border border-slate-200">
               <span className="text-slate-400">Alert-to-Case Ratio:</span>
               <div className="text-lg font-bold text-slate-700 mt-1">
-                {entity.operationalMetrics?.alertToCaseRatio || '14.8% conversion'}
+                {entity.operationalMetrics?.alertToCaseRatio == null ? 'Not available' : `${entity.operationalMetrics.alertToCaseRatio}%`}
               </div>
             </div>
           </div>
           <p className="text-xs text-slate-600 bg-slate-50 p-3 rounded border border-slate-200">
-            Detection telemetry is verified across perimeter firewalls, endpoint detection and response (EDR), and identity providers. Rapid triage instances under 5 minutes are flagged for superficial closure audits.
+            Metrics reflect records available in this entity and assessment period. Source verification is not asserted by this view.
           </p>
         </div>
       )}
@@ -597,18 +620,18 @@ export default function EntityProfile() {
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 font-mono text-xs">
             <div className="p-3 bg-white rounded-lg border border-slate-200">
               <span className="text-slate-400">Investigation Score:</span>
-              <div className="text-lg font-bold text-amber-600 mt-1">{investigationScore}/100</div>
+              <div className="text-lg font-bold text-amber-600 mt-1">{investigationScore == null ? '—' : `${investigationScore}/100`}</div>
             </div>
             <div className="p-3 bg-white rounded-lg border border-slate-200">
               <span className="text-slate-400">Avg Artifacts Attached:</span>
               <div className="text-lg font-bold text-slate-700 mt-1">
-                {entity.operationalMetrics?.avgArtifactsAttached || '3.4 evidence items'}
+                {entity.operationalMetrics?.avgArtifactsAttached == null ? 'Not available' : `${entity.operationalMetrics.avgArtifactsAttached} evidence items`}
               </div>
             </div>
             <div className="p-3 bg-white rounded-lg border border-slate-200">
               <span className="text-slate-400">Template Reuse Index:</span>
               <div className="text-lg font-bold text-rose-600 mt-1">
-                {entity.operationalMetrics?.templateReuseIndex || '18.2% repeated'}
+                {entity.operationalMetrics?.templateReuseIndex == null ? 'Not available' : `${entity.operationalMetrics.templateReuseIndex}%`}
               </div>
             </div>
           </div>
@@ -628,18 +651,18 @@ export default function EntityProfile() {
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 font-mono text-xs">
             <div className="p-3 bg-white rounded-lg border border-slate-200">
               <span className="text-slate-400">Escalation Score:</span>
-              <div className="text-lg font-bold text-rose-600 mt-1">{escalationScore}/100</div>
+              <div className="text-lg font-bold text-rose-600 mt-1">{escalationScore == null ? '—' : `${escalationScore}/100`}</div>
             </div>
             <div className="p-3 bg-white rounded-lg border border-slate-200">
               <span className="text-slate-400">Statutory 6h Compliance:</span>
               <div className="text-lg font-bold text-amber-600 mt-1">
-                {entity.operationalMetrics?.statutoryCompliance || '84.1% on-time'}
+                {entity.operationalMetrics?.statutoryCompliance == null ? 'Not available' : `${entity.operationalMetrics.statutoryCompliance}%`}
               </div>
             </div>
             <div className="p-3 bg-white rounded-lg border border-slate-200">
               <span className="text-slate-400">Critical Unescalated:</span>
               <div className="text-lg font-bold text-rose-600 mt-1">
-                {entity.operationalMetrics?.criticalUnescalated || '3 alerts flagged'}
+                {entity.operationalMetrics?.criticalUnescalated == null ? 'Not available' : `${entity.operationalMetrics.criticalUnescalated} alerts`}
               </div>
             </div>
           </div>
@@ -656,10 +679,11 @@ export default function EntityProfile() {
             <div className="card-title text-sm font-semibold text-slate-800">
               Chronological Forensic Evidence Timeline ({timeline.length} events)
             </div>
-            <span className="text-xs font-mono text-indigo-600">SHA-256 Validated</span>
+            <span className="text-xs font-mono text-slate-500">Chain verification status not available</span>
           </div>
 
           <div className="relative pl-6 space-y-4 border-l border-slate-200 ml-3">
+            {timeline.length === 0 && <p className="p-4 text-sm text-slate-500">No evidence timeline events are recorded for this entity.</p>}
             {timeline.map((item: any, idx: number) => (
               <div key={idx} className="relative group">
                 <span className="absolute -left-[31px] top-1 w-3 h-3 rounded-full bg-slate-50 border-2 border-indigo-500" />

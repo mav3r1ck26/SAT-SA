@@ -7,6 +7,7 @@ export const reportSchema = new Schema({
   status: { type: String, default: 'Not Generated' },
   generatedAt: { type: Date },
   format: { type: String },
+  formats: { type: [String], default: [] },
   content: { type: Object }
 })
 

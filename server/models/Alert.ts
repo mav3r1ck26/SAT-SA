@@ -30,7 +30,9 @@ export const alertSchema = new Schema({
 
   relatedCaseId: { type: String, ref: 'Case' },
   source: { type: String, enum: ['SIEM', 'EDR', 'NDR', 'Firewall', 'Email Gateway', 'Cloud', 'Manual', 'Other'], default: 'SIEM' },
-  period: { type: String, default: 'Q2 FY 2026-27' },
+  period: { type: String, required: true },
+  dataProvenance: { type: String, enum: ['submitted', 'sample', 'derived', 'legacy'], default: 'submitted' },
+  ingestionBatchId: { type: Schema.Types.ObjectId, ref: 'IngestionBatch' },
 
   // Analytics fields
   isAnomalous: { type: Boolean, default: false },

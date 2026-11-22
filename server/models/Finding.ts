@@ -5,7 +5,8 @@ export const findingSchema = new Schema({
   findingType: { type: String, required: true },
 
   entityId: { type: String, ref: 'Entity', required: true },
-  period: { type: String, default: 'Q2 FY 2026-27' },
+  period: { type: String, required: true },
+  dataProvenance: { type: String, enum: ['submitted', 'sample', 'derived', 'legacy'], default: 'derived' },
 
   title: { type: String, required: true },
   description: { type: String, required: true },

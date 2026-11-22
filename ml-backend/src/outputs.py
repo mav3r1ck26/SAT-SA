@@ -164,37 +164,41 @@ def generate_file_a_efficiency(
         # Add efficiency scores
         for target in EFFICIENCY_TARGETS:
             label = TARGET_LABELS.get(target, target)
-            # Extract from ML predictions
-            pred_val = 0
-            confidence = 0
+            pred_val = None
+            confidence = None
             interpretation = ""
             
-            # Try to get from ml_predictions structure
             if isinstance(ml_predictions, list) and pred_idx < len(ml_predictions):
                 pred = ml_predictions[pred_idx]
                 if isinstance(pred, dict) and target in pred:
                     pred_data = pred[target]
                     if isinstance(pred_data, dict):
-                        ml_pred = pred_data.get('prediction', 0)
-                        confidence = pred_data.get('confidence', 0)
+                        ml_pred = pred_data.get('prediction')
+                        confidence = pred_data.get('confidence')
                         interpretation = pred_data.get('interpretation', '')
+                    elif isinstance(pred_data, (int, float)):
+                        ml_pred = pred_data
                     else:
-                        ml_pred = pred_data if isinstance(pred_data, (int, float)) else 0
-                        confidence = 0.8
-                        interpretation = ""
+                        ml_pred = None
                 else:
-                    ml_pred = 0
-                    confidence = 0.5
-                    interpretation = ""
-                
-                rating = get_rating(target, ml_pred)
-                confidence_label = get_confidence_label(confidence)
-                formatted_val = format_value(target, ml_pred)
-                
-                row[f'{label}_Score'] = round(ml_pred, 4)
-                row[f'{label}_Rating'] = rating
-                row[f'{label}_Confidence'] = f"{confidence:.0%} ({confidence_label})"
-                row[f'{label}_Interpretation'] = interpretation or f"Value: {formatted_val}"
+                    ml_pred = None
+            else:
+                ml_pred = None
+
+            if isinstance(ml_pred, (int, float)) and np.isfinite(ml_pred):
+                pred_val = float(ml_pred)
+                row[f'{label}_Score'] = round(pred_val, 4)
+                row[f'{label}_Rating'] = get_rating(target, pred_val)
+                row[f'{label}_Interpretation'] = interpretation or f"Value: {format_value(target, pred_val)}"
+            else:
+                row[f'{label}_Score'] = None
+                row[f'{label}_Rating'] = 'Not Available'
+                row[f'{label}_Interpretation'] = 'No verified prediction available.'
+
+            if isinstance(confidence, (int, float)) and np.isfinite(confidence):
+                row[f'{label}_Confidence'] = f"{confidence:.0%} ({get_confidence_label(confidence)})"
+            else:
+                row[f'{label}_Confidence'] = 'Not available'
         
         # Add rule-based findings summary
         entity_findings = [f for f in rule_findings if f.get('entity_id') == entity_row.get('entity_id', '')]
@@ -275,14 +279,16 @@ def generate_file_b_recommendations(
                 if target in preds:
                     pred = preds[target]
                     if isinstance(pred, dict):
-                        score = pred.get('prediction', 0)
-                        confidence = pred.get('confidence', 0)
+                        score = pred.get('prediction')
+                        confidence = pred.get('confidence')
                     else:
                         score = pred
-                        confidence = 0.5
-                    
+                        confidence = None
+
+                    if not isinstance(score, (int, float)) or not np.isfinite(score):
+                        continue
                     rating = get_rating(target, score)
-                    if rating in ['Critical', 'Needs Improvement'] and confidence > 0.5:
+                    if rating in ['Critical', 'Needs Improvement'] and isinstance(confidence, (int, float)) and np.isfinite(confidence) and confidence > 0.5:
                         recs = IMPROVEMENT_RECOMMENDATIONS.get(target, [])
                         for rec in recs:
                             recommendations.append({

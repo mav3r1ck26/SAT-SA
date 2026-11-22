@@ -1,64 +1,103 @@
 import React, { useEffect, useState } from 'react'
-import { fetchIngestionQuality, uploadDataFiles, fetchSampleBundles, loadSampleBundle, detectFindings } from '../api/client'
+import { ApiError, fetchIngestionQuality, uploadDataFiles, fetchSampleBundles, loadSampleBundle, detectFindings, reprocessIngestionBatch } from '../api/client'
 import { 
   Upload, FileText, AlertTriangle, CheckCircle2, ShieldCheck, Database, 
   HardDrive, ArrowRight, Loader2, Sparkles, RefreshCw, Cpu, Layers, Check
 } from 'lucide-react'
 import { TelemetryPulse } from '../components/ui'
+import { useApp } from '../context/AppContext'
+import { useApiResource } from '../hooks/useApiResource'
 
 export default function DataIngestion() {
-  const [data, setData] = useState<any>(null)
+  const { assessmentPeriod } = useApp()
+  const qualityResource = useApiResource('ingestion-quality', signal => fetchIngestionQuality(signal))
+  const samplesResource = useApiResource('ingestion-samples', signal => fetchSampleBundles(signal))
+  const data = qualityResource.data
+  const sampleBundles = samplesResource.data || []
   const [uploading, setUploading] = useState(false)
   const [uploadResult, setUploadResult] = useState<any>(null)
   const [uploadProgress, setUploadProgress] = useState<any[]>([])
-  const [sampleBundles, setSampleBundles] = useState<any[]>([])
   const [loadingSample, setLoadingSample] = useState<string | null>(null)
+  const [reprocessingBatch, setReprocessingBatch] = useState<string | null>(null)
   const [detectingGaps, setDetectingGaps] = useState(false)
   const [detectionResult, setDetectionResult] = useState<any>(null)
-
-  const reloadQuality = () => {
-    fetchIngestionQuality().then(setData).catch(() => {})
-  }
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
+  const [retryFiles, setRetryFiles] = useState<File[]>([])
+  const [uploadRetryAt, setUploadRetryAt] = useState<number | null>(null)
+  const [clock, setClock] = useState(Date.now())
 
   useEffect(() => {
-    reloadQuality()
-    fetchSampleBundles().then(setSampleBundles).catch(() => {})
-  }, [])
+    if (qualityResource.data) setLastUpdated(new Date())
+  }, [qualityResource.data])
 
-  const totals = data?.totals ?? { alerts: 10085, cases: 6052 }
-  const batches = data?.batches ?? []
-  const qualityPct = totals.alerts > 0 ? Math.min(99.9, (totals.alerts / (totals.alerts + 50)) * 100).toFixed(1) : '99.5'
+  useEffect(() => {
+    if (uploadRetryAt === null) return
+    const timer = window.setInterval(() => setClock(Date.now()), 250)
+    return () => window.clearInterval(timer)
+  }, [uploadRetryAt])
+  const uploadRetryInSeconds = uploadRetryAt === null ? 0 : Math.max(0, Math.ceil((uploadRetryAt - clock) / 1000))
 
-  const workflow = ['Ingest Air-Gap Bundle', 'SHA-256 Hash Validation', 'Schema Canonical Mapping', 'ML Behavioral Inference', 'Supervisory Queue']
+  const reloadQuality = qualityResource.retry
+
+  const totals = data?.totals
+  const batches = data?.batches || []
+  const totalRecords = batches.reduce((sum: number, batch: any) => sum + Number(batch.recordsReceived || 0), 0)
+  const acceptedRecords = batches.reduce((sum: number, batch: any) => sum + Number(batch.validRecords || 0), 0)
+  const qualityPct = totalRecords ? (acceptedRecords / totalRecords * 100).toFixed(1) : null
+
+  const workflow = ['Ingest Assessment Bundle', 'SHA-256 Source Hash & Duplicate Check', 'Schema & Data-Quality Validation', 'Optional Advisory ML Inference', 'Supervisory Review Queue']
   const sources = ['Air-Gap Ingestion (CSV / JSON)', 'CEF / LEEF Syslog CSV', 'SIEM JSON Export', 'EDR Forensic Snapshot']
 
-  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || [])
-    e.target.value = ''
-    if (!files.length) return
+  const processFiles = async (files: File[]) => {
+    if (!files.length || uploadRetryInSeconds > 0) return
     setUploading(true)
     setUploadResult(null)
     setUploadProgress(files.map((file, fileIndex) => ({ fileName: file.name, fileIndex, status: 'queued' })))
-    reloadQuality()
-    const qualityRefreshTimer = window.setInterval(reloadQuality, 1200)
     try {
       const result = await uploadDataFiles(files, progress => {
         setUploadProgress(current => current.map(item => item.fileIndex === progress.fileIndex ? { ...item, ...progress } : item))
-        reloadQuality()
-      })
+      }, assessmentPeriod)
+      setRetryFiles([])
+      setUploadRetryAt(null)
       const fileCount = result.fileCount ?? files.length
       const failedFiles = result.failedFiles ?? 0
       setUploadResult({
         ...result,
-        message: `Processed ${fileCount - failedFiles} of ${fileCount} files; stored ${result.sourceRecordsStored ?? 0} parsed source rows and ${result.persistedRecords ?? 0} operational records from ${result.totalRecords ?? 0} parsed records.`
+        message: `Processed ${fileCount - failedFiles} of ${fileCount} files for ${assessmentPeriod}; stored ${result.sourceRecordsStored ?? 'not reported'} parsed source rows, ${result.persistedRecords ?? 'not reported'} alerts/cases, and ${result.telemetryRecordsStored ?? 'not reported'} telemetry coverage records from ${result.totalRecords ?? 'not reported'} parsed records.`
       })
       reloadQuality()
     } catch (err: any) {
       setUploadResult({ error: err.message || String(err) })
+      if (err instanceof ApiError && err.status === 429) {
+        setRetryFiles(files)
+        if (err.retryAfterMs !== undefined) setUploadRetryAt(Date.now() + err.retryAfterMs)
+      }
     } finally {
-      window.clearInterval(qualityRefreshTimer)
-      reloadQuality()
       setUploading(false)
+    }
+  }
+
+  const handleUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files || [])
+    event.target.value = ''
+    void processFiles(files)
+  }
+
+  const handleReprocessBatch = async (batch: any) => {
+    const batchId = String(batch._id)
+    setReprocessingBatch(batchId)
+    setUploadResult(null)
+    try {
+      const result = await reprocessIngestionBatch(batchId)
+      setUploadResult({
+        ...result,
+        message: `Reprocessed ${result.total ?? batch.recordsReceived} source records: stored ${result.persistedRecords ?? 0} alerts/cases and ${result.telemetryRecordsStored ?? 0} telemetry coverage records.`
+      })
+      reloadQuality()
+    } catch (error) {
+      setUploadResult({ error: error instanceof Error ? error.message : 'Batch reprocessing failed.' })
+    } finally {
+      setReprocessingBatch(null)
     }
   }
 
@@ -66,16 +105,16 @@ export default function DataIngestion() {
     setLoadingSample(filename)
     setUploadResult(null)
     try {
-      const result = await loadSampleBundle(filename)
+      const result = await loadSampleBundle(filename, assessmentPeriod)
       setUploadResult({
         ...result,
         filename,
         title,
-        message: `Accepted ${result.validRecords ?? result.inserted ?? 0} records (${result.sourceRecordsStored ?? 0} source rows and ${result.inserted ?? 0} operational records stored) from test bundle "${title}".`
+        message: `Processed ${result.total ?? 'not reported'} source records: ${result.validRecords ?? 0} accepted, ${result.persistedRecords ?? result.inserted ?? 0} alerts/cases and ${result.telemetryRecordsStored ?? 0} coverage records stored from "${title}" for ${assessmentPeriod}.`
       })
       reloadQuality()
     } catch (err) {
-      setUploadResult({ error: `Failed to load bundle: ${String(err)}` })
+      setUploadResult({ error: err instanceof Error ? err.message : 'Failed to load sample bundle.' })
     }
     setLoadingSample(null)
   }
@@ -92,9 +131,20 @@ export default function DataIngestion() {
     setDetectingGaps(false)
   }
 
-  const uploadHasIssues = Boolean(uploadResult?.files?.some((file: any) =>
-    !file.success || file.batch?.status === 'partial' || file.persistenceStatus === 'partial'
-  ))
+  const uploadHasIssues = Boolean(uploadResult?.error ||
+    uploadResult?.batch?.status === 'partial' ||
+    uploadResult?.batch?.status === 'failed' ||
+    uploadResult?.files?.some((file: any) =>
+      !file.success || file.batch?.status === 'partial' || file.batch?.status === 'failed' || file.persistenceStatus === 'partial'
+    ))
+  const canReprocessBatch = (batch: any) =>
+    batch.status === 'partial' &&
+    batch.persistedRecords === 0 &&
+    batch.telemetryRecordsStored === 0 &&
+    batch.sourceRecordsStored > 0 &&
+    Array.isArray(batch.warnings) &&
+    batch.warnings.length === 1 &&
+    /unknown or inconsistent entity ID/.test(batch.warnings[0])
 
   return (
     <div className="p-6 max-w-[1700px] mx-auto space-y-6">
@@ -102,7 +152,7 @@ export default function DataIngestion() {
         <div>
           <div className="flex items-center gap-3">
             <h1 className="page-title text-2xl font-bold tracking-tight">Air-Gap Telemetry Ingestion Pipeline</h1>
-            <TelemetryPulse active status="online" label="LOCAL PARSER ACTIVE" />
+            <TelemetryPulse active={false} status="offline" label="UPLOAD STATUS" />
           </div>
           <p className="page-subtitle text-slate-500 mt-0.5">
             Cryptographic ingestion of air-gapped CSE operational logs, schema normalization, and validation pipelines
@@ -112,11 +162,18 @@ export default function DataIngestion() {
         <div className="flex items-center gap-2">
           <button 
             onClick={reloadQuality} 
+            disabled={qualityResource.retryInSeconds > 0}
             className="btn btn-sm flex items-center gap-1.5 text-slate-600 hover:text-slate-900"
             title="Refresh database quality stats"
           >
-            <RefreshCw className="w-3.5 h-3.5 text-indigo-600" /> Refresh Metrics
+            <RefreshCw className="w-3.5 h-3.5 text-indigo-600" /> {qualityResource.retryInSeconds ? `Retry in ${qualityResource.retryInSeconds}s` : 'Refresh Metrics'}
           </button>
+        </div>
+        <div className="mt-2 text-xs text-slate-500">
+          {qualityResource.error
+            ? <span role="alert" className="text-rose-700">Metrics unavailable: {qualityResource.error.message}</span>
+            : lastUpdated ? `Metrics updated ${lastUpdated.toLocaleTimeString()}` : 'Loading metrics…'}
+          {qualityResource.loading && <span role="status" className="ml-2">Refreshing metrics…</span>}
         </div>
       </div>
 
@@ -169,6 +226,14 @@ export default function DataIngestion() {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
+          {samplesResource.error && (
+            <p role="alert" className="col-span-3 text-sm text-rose-700">
+              Sample bundles are unavailable: {samplesResource.error.message}
+              <button className="btn btn-sm ml-3" disabled={samplesResource.retryInSeconds > 0} onClick={samplesResource.retry}>
+                {samplesResource.retryInSeconds > 0 ? `Retry in ${samplesResource.retryInSeconds}s` : 'Retry'}
+              </button>
+            </p>
+          )}
           {sampleBundles.length > 0 ? sampleBundles.slice(0, 3).map((bundle: any) => (
             <div key={bundle.filename} className="bg-slate-50 rounded-lg p-4 border border-slate-200 flex flex-col justify-between hover:border-slate-300 transition-colors">
               <div className="space-y-2">
@@ -197,7 +262,7 @@ export default function DataIngestion() {
             </div>
           )) : (
             <div className="col-span-3 text-center py-6 text-xs font-mono text-slate-400">
-              Loading preconfigured test bundle manifests...
+              {samplesResource.error ? 'Sample bundles are unavailable.' : samplesResource.loading ? 'Loading sample bundles…' : 'No sample bundles are configured.'}
             </div>
           )}
         </div>
@@ -225,10 +290,10 @@ export default function DataIngestion() {
                 </>
               ) : (
                 <>
-                  <Upload className="w-4 h-4" /> Upload Telemetry File(s)
+                  <Upload className="w-4 h-4" /> {uploadRetryInSeconds > 0 ? `Retry in ${uploadRetryInSeconds}s` : 'Upload Telemetry File(s)'}
                 </>
               )}
-              <input type="file" accept=".csv,.json" multiple className="hidden" onChange={handleUpload} disabled={uploading} />
+              <input type="file" accept=".csv,.json" multiple className="hidden" onChange={handleUpload} disabled={uploading || uploadRetryInSeconds > 0} />
             </label>
           </div>
         </div>
@@ -263,6 +328,12 @@ export default function DataIngestion() {
             : <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />}
           <div className="text-xs font-mono text-slate-800 flex-1">
             <strong>{uploadHasIssues ? 'Ingestion Completed with Issues:' : 'Ingestion Complete:'}</strong> {uploadResult.message || `Ingested ${uploadResult.inserted} records.`}
+            {uploadResult.batch?.warnings?.length > 0 && (
+              <div role="alert" className="mt-2 text-amber-800">{uploadResult.batch.warnings.join(' ')}</div>
+            )}
+            {uploadResult.batch?.persistenceErrors?.length > 0 && (
+              <div role="alert" className="mt-2 text-rose-700">{uploadResult.batch.persistenceErrors.map((error: any) => error.message).join('; ')}</div>
+            )}
             {uploadResult.files?.length > 0 && (
               <div className="mt-3 space-y-2">
                 {uploadResult.files.map((file: any, index: number) => {
@@ -280,7 +351,10 @@ export default function DataIngestion() {
                       <div className="flex flex-wrap items-center gap-2">
                         <strong className="break-all">{file.fileName}</strong>
                         <span className={`badge border text-[10px] font-mono ${badgeStyle}`}>{status}</span>
-                        <span className="text-slate-600">{received} parsed · {sourceStored} source rows stored · {persisted} alerts/cases stored</span>
+                        <span className="text-slate-600">
+                          {received} parsed · {file.batch?.validRecords ?? file.validRecords ?? 0} accepted · {file.batch?.invalidRecords ?? 0} rejected ·
+                          {' '}{sourceStored} source rows · {persisted} alerts/cases · {file.telemetryRecordsStored ?? file.batch?.telemetryRecordsStored ?? 0} coverage stored
+                        </span>
                       </div>
                       {file.error && <div className="mt-1 text-rose-700">{file.error}</div>}
                       {file.persistenceErrors?.length > 0 && <div className="mt-1 text-rose-700">{file.persistenceErrors.map((error: any) => error.message).join('; ')}</div>}
@@ -291,6 +365,7 @@ export default function DataIngestion() {
                         </div>
                       )}
                       {file.mlInference && <div className="mt-1 text-slate-500">ML inference: {file.mlInference.status}{file.mlInference.evaluatedEntities ? ` · ${file.mlInference.evaluatedEntities} entity-period vectors` : ''}</div>}
+                      {file.batch?.analyticsStatus && <div className="mt-1 text-slate-500">Finding refresh: {file.batch.analyticsStatus}{file.batch.analyticsError ? ` · ${file.batch.analyticsError}` : ''}</div>}
                     </div>
                   )
                 })}
@@ -340,6 +415,15 @@ export default function DataIngestion() {
           <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0" />
           <div className="text-xs font-mono text-rose-600">
             <strong>Ingestion Interrupted:</strong> {uploadResult.error}
+            {retryFiles.length > 0 && (
+              <button
+                className="btn btn-sm ml-3"
+                disabled={uploading || uploadRetryInSeconds > 0}
+                onClick={() => void processFiles(retryFiles)}
+              >
+                {uploadRetryInSeconds > 0 ? `Retry in ${uploadRetryInSeconds}s` : 'Retry upload'}
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -360,35 +444,35 @@ export default function DataIngestion() {
             <Database className="w-4 h-4 text-indigo-600" />
             <div className="card-title">Ingested Telemetry Database & Data Quality Telemetry</div>
           </div>
-          <span className="badge badge-info text-xs font-mono">LOCAL MONGODB STORAGE</span>
+          <span className="badge badge-info text-xs font-mono">SOURCE STATUS VIA API</span>
         </div>
 
         <div className="p-5 space-y-5">
           <div className="bg-slate-50 p-4 rounded-lg border border-slate-200 space-y-2">
             <div className="flex justify-between items-center text-xs font-mono">
-              <span className="text-slate-600 font-bold">Overall Ingestion Quality Index</span>
-              <span className="text-indigo-600 font-bold">{qualityPct}% Fidelity</span>
+              <span className="text-slate-600 font-bold">Recent Batch Acceptance Rate</span>
+              <span className="text-indigo-600 font-bold">{qualityPct == null ? 'Not available' : `${qualityPct}%`}</span>
             </div>
             <div className="risk-bar-track h-2.5 bg-white">
-              <div 
-                className={`risk-bar-fill ${Number(qualityPct) >= 90 ? 'bg-emerald-600 shadow-sm' : Number(qualityPct) >= 75 ? 'bg-amber-600' : 'bg-rose-600'}`} 
-                style={{ width: `${qualityPct}%` }} 
-              />
+              {qualityPct != null && <div
+                className={`risk-bar-fill ${Number(qualityPct) >= 90 ? 'bg-emerald-600 shadow-sm' : Number(qualityPct) >= 75 ? 'bg-amber-600' : 'bg-rose-600'}`}
+                style={{ width: `${qualityPct}%` }}
+              />}
             </div>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
             {[
-              { label: 'Total Ingested Alerts', value: totals.alerts, icon: HardDrive, color: 'text-indigo-600' },
-              { label: 'Correlated Forensic Cases', value: totals.cases, icon: CheckCircle2, color: 'text-emerald-600' },
-              { label: 'Recent Ingestion Batches', value: batches.length, icon: FileText, color: 'text-amber-600' }
+              { label: 'Total Ingested Alerts', value: totals?.alerts, icon: HardDrive, color: 'text-indigo-600' },
+              { label: 'Correlated Forensic Cases', value: totals?.cases, icon: CheckCircle2, color: 'text-emerald-600' },
+              { label: 'Recent Ingestion Batches', value: data ? batches.length : undefined, icon: FileText, color: 'text-amber-600' }
             ].map((stat, i) => {
               const Icon = stat.icon
               return (
                 <div key={i} className="bg-slate-50 rounded-lg p-4 border border-slate-200 flex items-center justify-between">
                   <div>
                     <div className="label text-slate-500 text-[10px] mb-1">{stat.label}</div>
-                    <div className="font-mono text-2xl font-bold text-slate-800">{stat.value.toLocaleString()}</div>
+                    <div className="font-mono text-2xl font-bold text-slate-800">{typeof stat.value === 'number' ? stat.value.toLocaleString() : '—'}</div>
                   </div>
                   <Icon className={`w-6 h-6 ${stat.color} opacity-80`} />
                 </div>
@@ -399,6 +483,7 @@ export default function DataIngestion() {
           {batches.length > 0 && (
             <div className="pt-2">
               <div className="label mb-2 text-slate-600 font-bold">Recent Telemetry Ingestion Batches</div>
+              <p className="mb-2 text-xs text-slate-500">A partial batch may contain source rows but no operational records. Register referenced entities first, then retry batches rejected only for unknown entity IDs.</p>
               <div className="table-wrap">
                 <table className="data-table">
                   <thead>
@@ -412,6 +497,7 @@ export default function DataIngestion() {
                       <th>Status</th>
                       <th>ML Inference</th>
                       <th className="text-right">Date</th>
+                      <th>Action</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -434,6 +520,17 @@ export default function DataIngestion() {
                           </span>
                         </td>
                         <td className="text-xs font-mono text-slate-500 text-right">{new Date(b.createdAt).toLocaleDateString()}</td>
+                        <td>
+                          {canReprocessBatch(b) ? (
+                            <button
+                              className="btn btn-sm"
+                              disabled={reprocessingBatch !== null}
+                              onClick={() => void handleReprocessBatch(b)}
+                            >
+                              {reprocessingBatch === String(b._id) ? 'Reprocessing…' : 'Reprocess'}
+                            </button>
+                          ) : '—'}
+                        </td>
                       </tr>
                     ))}
                   </tbody>

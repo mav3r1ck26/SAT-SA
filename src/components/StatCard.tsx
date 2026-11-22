@@ -21,7 +21,7 @@ const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {
 interface StatCardProps {
   label: string
   value: string
-  trend: number
+  trend?: number | null
   icon: string
   accent?: 'neutral' | 'warning' | 'danger' | 'info' | 'success'
 }
@@ -49,9 +49,7 @@ export default function StatCard({ label, value, trend, icon, accent = 'neutral'
         </div>
       </div>
 
-      <div className="mt-4">
-        <Trend value={trend} />
-      </div>
+      {trend != null && <div className="mt-4"><Trend value={trend} /></div>}
     </div>
   )
 }

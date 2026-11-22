@@ -183,9 +183,10 @@ export function HBar({ data }: { data: { label: string; value: number; sub?: str
 export function Heatmap({ rows, columns, data }: {
   rows: string[]
   columns: string[]
-  data: number[][]
+  data: Array<Array<number | null>>
 }) {
-  const colColor = (v: number) => {
+  const colColor = (v: number | null) => {
+    if (v == null) return 'bg-slate-50 text-slate-400 border-slate-200'
     if (v >= 80) return 'bg-emerald-50 text-emerald-700 border-emerald-200'
     if (v >= 60) return 'bg-blue-50 text-blue-700 border-blue-200'
     if (v >= 40) return 'bg-amber-50 text-amber-700 border-amber-200'
@@ -209,7 +210,7 @@ export function Heatmap({ rows, columns, data }: {
               {(data[i] || []).map((v, j) => (
                 <td key={j} className="px-2 py-2 text-center">
                   <div className={`inline-block min-w-[50px] px-2 py-1 rounded-md text-[11.5px] font-mono font-bold border ${colColor(v)}`}>
-                    {v}%
+                    {v == null ? '—' : `${v}%`}
                   </div>
                 </td>
               ))}

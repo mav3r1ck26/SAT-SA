@@ -1,27 +1,37 @@
-import React, { useEffect, useState } from 'react'
+import React from 'react'
 import { fetchInvestigationAnalytics } from '../api/client'
 import { downloadCSV } from '../utils/export'
+import { useApp } from '../context/AppContext'
 import StatCard from '../components/StatCard'
 import { BarChart } from '../components/charts'
 import { TelemetryPulse } from '../components/ui'
 import { Search, Download, Clock, ShieldCheck, UserCheck, AlertCircle, Layers, Fingerprint } from 'lucide-react'
+import { useEntityScope } from '../hooks/useEntityScope'
+import { useApiResource } from '../hooks/useApiResource'
+import RequestState from '../components/RequestState'
 
 export default function InvestigationAnalytics() {
-  const [data, setData] = useState<any>(null)
+  const { assessmentPeriod } = useApp()
+  const entityId = useEntityScope()
+  const resource = useApiResource(
+    `investigation-analytics:${assessmentPeriod}:${entityId || 'ALL'}`,
+    signal => fetchInvestigationAnalytics(assessmentPeriod, entityId, signal)
+  )
+  const data = resource.data
 
-  useEffect(() => {
-    fetchInvestigationAnalytics().then(setData).catch(() => {})
-  }, [])
+  if (resource.loading || resource.error || !data) {
+    return <RequestState loading={resource.loading} error={resource.error} retry={resource.retry} retryInSeconds={resource.retryInSeconds} loadingMessage="Loading investigation analytics…" />
+  }
 
-  const kpis = data?.kpis ?? {}
-  const durationDistribution = data?.durationDistribution ?? []
-  const depth = data?.depth ?? []
-  const patterns = data?.patterns ?? []
-  const evidenceFrequency = data?.evidenceFrequency ?? []
-  const workload = data?.workload ?? []
-  const reopening = data?.reopening ?? []
-  const behaviour = data?.behaviour ?? []
-  const totalCases = kpis.totalCases ?? 32481
+  const kpis = data.kpis
+  const durationDistribution = data.durationDistribution
+  const depth = data.depth
+  const patterns = data.patterns
+  const evidenceFrequency = data.evidenceFrequency
+  const workload = data.workload
+  const reopening = data.reopening
+  const behaviour = data.behaviour
+  const totalCases = kpis.totalCases
 
   const patternExplanations: Record<string, string> = {
     'Superficial': 'No investigation depth is recorded for these cases. Check notes, actions, and attachments; work performed outside the recorded system may be missing.',
@@ -34,10 +44,10 @@ export default function InvestigationAnalytics() {
     const headers = ['Metric', 'Value']
     const rows = [
       ['Total Investigated Cases', totalCases],
-      ['Mean Investigation Triage', kpis.meanDuration ?? '42 min'],
-      ['Investigation-to-Closure Ratio', kpis.investigationToClosure ?? '96.4%'],
-      ['Case Reopening Rate', kpis.caseReopening ?? '5.8%'],
-      ['Supervisory Review Queue', kpis.requiresReview ?? 560]
+      ['Mean Investigation Triage', kpis.meanDuration],
+      ['Investigation-to-Closure Ratio', kpis.investigationToClosure],
+      ['Case Reopening Rate', kpis.caseReopening],
+      ['Supervisory Review Queue', kpis.requiresReview]
     ]
     downloadCSV(`SAT-SA_Investigation_Analytics_${new Date().toISOString().slice(0, 10)}`, headers, rows)
   }
@@ -61,12 +71,14 @@ export default function InvestigationAnalytics() {
         </div>
       </div>
 
+      {totalCases === 0 && <div role="status" className="rounded border border-slate-200 bg-white p-3 text-sm text-slate-500">No case records for the selected entity and assessment period.</div>}
+
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3.5">
-        <StatCard label="Total Investigated Cases" value={typeof totalCases === 'number' ? totalCases.toLocaleString() : String(totalCases)} trend={8} icon="cases" accent="neutral" />
-        <StatCard label="Mean Investigation Triage" value={kpis.meanDuration ?? '42 min'} trend={-12} icon="gap" accent="info" />
-        <StatCard label="Investigation-to-Closure" value={kpis.investigationToClosure ?? '96.4%'} trend={-1} icon="shield" accent="info" />
-        <StatCard label="Case Reopening Rate" value={kpis.caseReopening ?? '5.8%'} trend={15} icon="alert" accent="warning" />
-        <StatCard label="Supervisory Review Queue" value={String(kpis.requiresReview ?? 560)} trend={4} icon="samples" accent="danger" />
+        <StatCard label="Total Investigated Cases" value={totalCases.toLocaleString()} icon="cases" accent="neutral" />
+        <StatCard label="Mean Investigation Triage" value={kpis.meanDuration} icon="gap" accent="info" />
+        <StatCard label="Investigation-to-Closure" value={kpis.investigationToClosure} icon="shield" accent="info" />
+        <StatCard label="Case Reopening Rate" value={kpis.caseReopening} icon="alert" accent="warning" />
+        <StatCard label="Supervisory Review Queue" value={String(kpis.requiresReview)} icon="samples" accent="danger" />
       </div>
 
       {/* Duration Distribution + Investigation Depth */}

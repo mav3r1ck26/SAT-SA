@@ -1,5 +1,7 @@
 import { Configuration } from '../models/Configuration'
 import { getFrameworkDimensionWeights } from './assessmentFramework'
+import { appendAuditEvent, type AuditEventInput } from './audit'
+import { isAssessmentPeriod, normalizeAssessmentPeriod } from './assessmentPeriods'
 
 const DEFAULT_CONFIGS = [
   // Execution Gap Thresholds
@@ -417,21 +419,128 @@ export async function getConfigCategory(category: string) {
   return configs.map(exposeCanonicalFrameworkWeights)
 }
 
-export async function setConfig(key: string, value: any, modifiedBy: string): Promise<void> {
-  const existing = await Configuration.findOne({ key })
-  if (key === 'dimensionWeights' || (existing && !existing.isEditable)) {
-    const error = new Error('This configuration is locked by the active assessment framework') as Error & { statusCode: number }
-    error.statusCode = 409
-    throw error
-  }
-  await Configuration.findOneAndUpdate(
-    { key },
-    { value, lastModifiedBy: modifiedBy, lastModifiedAt: new Date() },
-    { upsert: true, new: true }
-  )
-}
-
 export async function getAllConfigs() {
   const configs = await Configuration.find().lean()
   return configs.map(exposeCanonicalFrameworkWeights)
+}
+
+export async function resolveAssessmentPeriod(value?: unknown): Promise<string> {
+  const configured = value === undefined ? await getConfig<string>('assessmentPeriod') : value
+  if (value !== undefined && (typeof value !== 'string' || !value.trim())) {
+    const error = new Error('A supported assessment period is required.') as Error & { statusCode: number }
+    error.statusCode = 400
+    throw error
+  }
+  const period = normalizeAssessmentPeriod(configured)
+  if (!isAssessmentPeriod(period)) {
+    const error = new Error('A supported assessment period is required.') as Error & { statusCode: number }
+    error.statusCode = 400
+    throw error
+  }
+  return period
+}
+
+let configurationRevision = 0
+
+export function getConfigurationRevision() {
+  return configurationRevision
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return false
+  const prototype = Object.getPrototypeOf(value)
+  return prototype === Object.prototype || prototype === null
+}
+
+export function validateConfigurationValue(config: any, value: unknown): string | null {
+  const validTypes: Record<string, (item: unknown) => boolean> = {
+    number: item => typeof item === 'number' && Number.isFinite(item),
+    string: item => typeof item === 'string' && item.length <= 512,
+    boolean: item => typeof item === 'boolean',
+    array: item => Array.isArray(item) && item.length <= 100,
+    object: isPlainObject
+  }
+  if (!validTypes[config.dataType]?.(value)) return `Value must be a valid ${config.dataType || 'JSON'} value.`
+  if (typeof value === 'number') {
+    if (config.minValue != null && value < config.minValue) return `Value must be at least ${config.minValue}.`
+    if (config.maxValue != null && value > config.maxValue) return `Value must be at most ${config.maxValue}.`
+  }
+  if (config.key === 'assessmentPeriod' && (typeof value !== 'string' || !isAssessmentPeriod(normalizeAssessmentPeriod(value)))) {
+    return 'Assessment period must be one of the configured periods.'
+  }
+  if (config.allowedValues?.length && !config.allowedValues.some((allowed: unknown) => JSON.stringify(allowed) === JSON.stringify(value))) {
+    return 'Value is not in the allowed set.'
+  }
+  if (config.dataType === 'array' && config.key === 'peerPercentileBands') {
+    const bands = value as number[]
+    if (!bands.every(Number.isFinite) || bands[0] !== 0 || bands[bands.length - 1] !== 100 || bands.some((item, index) => index > 0 && item <= bands[index - 1])) {
+      return 'Percentile bands must be strictly increasing from 0 to 100.'
+    }
+  }
+  if (config.dataType === 'object') {
+    const defaults = config.defaultValue
+    const candidate = value as Record<string, unknown>
+    if (isPlainObject(defaults) && (Object.keys(candidate).length !== Object.keys(defaults).length || Object.keys(defaults).some(key => !(key in candidate)))) {
+      return 'Object value must contain exactly the configured keys.'
+    }
+    if (Object.values(candidate).some(item => typeof item !== 'number' || !Number.isFinite(item) || item < -1 || item > 1)) {
+      return 'Object values must be finite numbers from -1 to 1.'
+    }
+  }
+  if (config.key === 'maxUploadSizeMB' && Number(value) > Number(process.env.UPLOAD_MAX_SIZE_MB || 50)) {
+    return 'Configured upload size exceeds the service upload limit.'
+  }
+  return null
+}
+
+export async function updateConfigValue(key: string, value: unknown, actor: AuditEventInput['actor'], context: Pick<AuditEventInput, 'sessionId' | 'ipAddress' | 'userAgent'>) {
+  const config = await Configuration.findOne({ key })
+  if (!config) {
+    const error = new Error('Unknown configuration key.') as Error & { statusCode: number }
+    error.statusCode = 404
+    throw error
+  }
+  if (!config.isEditable || key === 'dimensionWeights') {
+    const error = new Error('This configuration is locked by the active assessment framework.') as Error & { statusCode: number }
+    error.statusCode = 409
+    throw error
+  }
+  const validationError = validateConfigurationValue(config, value)
+  if (validationError) {
+    const error = new Error(validationError) as Error & { statusCode: number }
+    error.statusCode = 400
+    throw error
+  }
+  const previousValue = config.value
+  const updated = await Configuration.findOneAndUpdate(
+    { key, version: config.version },
+    { $set: { value, lastModifiedBy: actor.username, lastModifiedAt: new Date() }, $inc: { version: 1 } },
+    { new: true, runValidators: true }
+  )
+  if (!updated) {
+    const error = new Error('Configuration changed concurrently; reload and retry.') as Error & { statusCode: number }
+    error.statusCode = 409
+    throw error
+  }
+  configurationRevision++
+  try {
+    await appendAuditEvent({
+      actor,
+      action: 'Configuration updated',
+      actionCategory: 'Configuration',
+      detail: `Updated ${key} to version ${updated.version}`,
+      previousValue: { version: config.version, value: previousValue },
+      newValue: { version: updated.version, value: updated.value },
+      ...context
+    })
+  } catch (error) {
+    const rollback = await Configuration.updateOne(
+      { key, version: updated.version },
+      { $set: { value: previousValue }, $inc: { version: 1 } }
+    )
+    if (rollback.modifiedCount !== 1) throw new Error('Configuration update failed and could not be rolled back.')
+    configurationRevision++
+    throw error
+  }
+  return updated
 }

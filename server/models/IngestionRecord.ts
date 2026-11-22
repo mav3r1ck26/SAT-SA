@@ -9,11 +9,13 @@ export const ingestionRecordSchema = new Schema({
   recordType: { type: String, enum: ['alert', 'case', 'soc_feature_vector', 'coverage', 'unknown'], default: 'unknown' },
   processingStatus: { type: String, enum: ['accepted', 'inference_input', 'invalid', 'duplicate'], default: 'accepted' },
   recordData: { type: Schema.Types.Mixed, required: true },
-  createdAt: { type: Date, default: Date.now }
+  createdAt: { type: Date, default: Date.now },
+  retentionExpiresAt: { type: Date, required: true }
 })
 
 ingestionRecordSchema.index({ batchId: 1, recordIndex: 1 }, { unique: true })
 ingestionRecordSchema.index({ entityId: 1, createdAt: -1 })
+ingestionRecordSchema.index({ retentionExpiresAt: 1 }, { expireAfterSeconds: 0 })
 
 export type IngestionRecordType = InferSchemaType<typeof ingestionRecordSchema>
 export const IngestionRecord = model('IngestionRecord', ingestionRecordSchema)

@@ -1,13 +1,19 @@
 import { Router, Response } from 'express'
-import { getConfig, getConfigCategory, setConfig } from '../services/configuration'
+import { getAllConfigs, getConfig, getConfigCategory, updateConfigValue } from '../services/configuration'
 
 const router = Router()
 
 function handleError(err: unknown, res: Response) {
-  const message = err instanceof Error ? err.message : 'Unknown error'
   const statusCode = typeof err === 'object' && err !== null && 'statusCode' in err ? Number((err as any).statusCode) : 500
-  res.status(statusCode).json({ success: false, error: { code: statusCode === 409 ? 'CONFIGURATION_LOCKED' : 'INTERNAL_ERROR', message } })
+  const message = statusCode < 500 && err instanceof Error ? err.message : 'The configuration request could not be completed.'
+  res.status(statusCode).json({ success: false, error: { code: statusCode === 409 ? 'CONFIGURATION_CONFLICT' : statusCode === 400 ? 'INVALID_CONFIGURATION' : statusCode === 404 ? 'UNKNOWN_CONFIGURATION' : 'INTERNAL_ERROR', message } })
 }
+
+router.get('/', async (_req, res) => {
+  try {
+    res.json({ success: true, data: await getAllConfigs() })
+  } catch (err) { handleError(err, res) }
+})
 
 router.get('/category/:category', async (req, res) => {
   try {
@@ -28,8 +34,13 @@ router.put('/:key', async (req, res) => {
     if (!Object.prototype.hasOwnProperty.call(req.body ?? {}, 'value')) {
       return res.status(400).json({ success: false, error: { code: 'BAD_REQUEST', message: 'Configuration value is required' } })
     }
-    await setConfig(req.params.key, req.body.value, req.body.modifiedBy || 'Examiner')
-    res.json({ success: true, data: { key: req.params.key, value: req.body.value } })
+    if (!req.user) return res.status(401).json({ success: false, error: { code: 'UNAUTHENTICATED', message: 'Authentication required.' } })
+    const config = await updateConfigValue(req.params.key, req.body.value, req.user, {
+      sessionId: req.sessionId,
+      ipAddress: req.ip,
+      userAgent: req.get('user-agent')
+    })
+    res.json({ success: true, data: { key: config.key, value: config.value, version: config.version } })
   } catch (err) { handleError(err, res) }
 })
 

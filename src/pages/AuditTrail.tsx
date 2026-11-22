@@ -1,39 +1,43 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState } from 'react'
 import { fetchAuditLog, exportAuditLog } from '../api/client'
 import { Download, Search, Shield, Filter, Key, CheckCircle2, AlertCircle } from 'lucide-react'
-import { TelemetryPulse } from '../components/ui'
+import { downloadCSV } from '../utils/export'
+import { useApiResource } from '../hooks/useApiResource'
+import RequestState from '../components/RequestState'
 
 export default function AuditTrail() {
   const [search, setSearch] = useState('')
-  const [records, setRecords] = useState<any[]>([])
   const [userFilter, setUserFilter] = useState('')
   const [actionFilter, setActionFilter] = useState('')
+  const [exportError, setExportError] = useState('')
+  const params: Record<string, string> = {}
+  if (userFilter) params.user = userFilter
+  if (actionFilter) params.action = actionFilter
+  if (search) params.search = search
+  const resourceKey = new URLSearchParams(params).toString()
+  const resource = useApiResource(`audit-trail:${resourceKey}`, signal =>
+    fetchAuditLog(Object.keys(params).length ? params : undefined, signal)
+  )
+  const records = resource.data || []
 
-  useEffect(() => {
-    const params: Record<string, string> = {}
-    if (userFilter) params.user = userFilter
-    if (actionFilter) params.action = actionFilter
-    if (search) params.search = search
-    fetchAuditLog(Object.keys(params).length ? params : undefined).then(setRecords).catch(() => setRecords([]))
-  }, [userFilter, actionFilter])
+  if (resource.loading || resource.error || !resource.data) {
+    return <RequestState loading={resource.loading} error={resource.error} retry={resource.retry} retryInSeconds={resource.retryInSeconds} loadingMessage="Loading audit records…" />
+  }
 
   const filtered = records.filter(r =>
     !search || (r.user || '').includes(search) || (r.action || '').includes(search) || (r.entityId || '').includes(search) || (r.finding || '').includes(search)
   )
 
   const handleExport = async () => {
+    setExportError('')
     try {
       const data = await exportAuditLog()
-      const csv = ['Timestamp,User,Action,Finding,Entity,Status']
-      data.forEach((r: any) => csv.push(`${r.timestamp},${r.user},${r.action},${r.finding || ''},${r.entityId || ''},${r.status || ''}`))
-      const blob = new Blob([csv.join('\n')], { type: 'text/csv' })
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `audit-trail-${new Date().toISOString().slice(0, 10)}.csv`
-      a.click()
-      URL.revokeObjectURL(url)
-    } catch { /* ignore */ }
+      const headers = ['Timestamp', 'User', 'Action', 'Finding', 'Entity', 'Status']
+      const rows = data.map((record: any) => [record.timestamp, record.user, record.action, record.finding || '', record.entityId || '', record.status || ''])
+      downloadCSV(`audit-trail-${new Date().toISOString().slice(0, 10)}`, headers, rows)
+    } catch (error) {
+      setExportError(error instanceof Error ? error.message : 'Audit export failed.')
+    }
   }
 
   return (
@@ -41,11 +45,11 @@ export default function AuditTrail() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200 pb-4">
         <div>
           <div className="flex items-center gap-3">
-            <h1 className="page-title text-2xl font-bold tracking-tight">Supervisory Immutable Audit Ledger</h1>
-            <TelemetryPulse active status="online" label="SHA-256 APPEND-ONLY LOG" />
+            <h1 className="page-title text-2xl font-bold tracking-tight">Tamper-Evident Supervisory Audit Chain</h1>
           </div>
+          {exportError && <p role="alert" className="text-sm text-rose-700">{exportError}</p>}
           <p className="page-subtitle text-slate-500 mt-0.5">
-            Tamper-evident chronological journal of all examiner adjudications, data ingestion runs, and regulatory exports
+            Hash-linked chronological records. Hashing can reveal changes but does not make the database absolutely immutable.
           </p>
         </div>
         <div className="flex items-center gap-2">

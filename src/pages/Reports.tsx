@@ -1,44 +1,49 @@
-import React, { useEffect, useState } from 'react'
-import { fetchReports, generateReport, getReport, fetchAuditLog, exportAuditLog, fetchMLModelInfo, evaluateFleetML, trainAutoML } from '../api/client'
+import { useState } from 'react'
+import { fetchReports, generateReport, fetchAuditLog, fetchMLModelInfo, evaluateFleetML, trainAutoML } from '../api/client'
 import { 
   FileText, Clock, CheckCircle2, Loader2, FileDown, 
   Shield, FileCheck, Layers, RefreshCw, Printer, AlertCircle,
   History, Server, Cpu, Lock, ShieldCheck, Database, Search, Filter, Play, CheckCircle
 } from 'lucide-react'
-import { TelemetryPulse } from '../components/ui'
 import { downloadCSV, downloadJSON, printDossier } from '../utils/export'
-
-const REPORT_DEFINITIONS = [
-  { id: 'RPT-01', name: 'Critical Entity Supervisory Examination Dossier', description: 'Comprehensive risk assessment and operational evidence audit for designated CSE-014', formats: ['PDF', 'CSV', 'JSON'] },
-  { id: 'RPT-02', name: 'Cross-Entity Sector Comparison Matrix', description: 'Comparative behavioral anomaly distribution and variance across all registered CSEs', formats: ['PDF', 'CSV', 'JSON'] },
-  { id: 'RPT-03', name: 'Execution Gap Forensic Evidence Synthesis', description: 'All detected behavioral divergences categorized by MITRE ATT&CK and control domains', formats: ['PDF', 'CSV', 'JSON'] },
-  { id: 'RPT-04', name: 'Negative Space & Sensor Blind Spot Audit', description: 'Detailed sensor blackout, suppressed alert pipelines, and missing telemetry records', formats: ['PDF', 'CSV', 'JSON'] },
-  { id: 'RPT-05', name: 'Peer Benchmarking & Gaussian Percentile Ranking', description: 'Sector-wide comparative metrics, standard deviation bounds, and outlier indices', formats: ['PDF', 'CSV', 'JSON'] },
-  { id: 'RPT-06', name: 'Supervisory Manual Review & Adjudication Summary', description: 'Findings requiring statutory examiner adjudication before formal regulatory notification', formats: ['PDF', 'CSV', 'JSON'] }
-]
+import { useApp } from '../context/AppContext'
+import { useApiResource } from '../hooks/useApiResource'
+import RequestState from '../components/RequestState'
 
 export default function Reports() {
+  const { selectedEntity, assessmentPeriod } = useApp()
   const [activeTab, setActiveTab] = useState<'dossiers' | 'audit' | 'architecture'>('dossiers')
-  const [reports, setReports] = useState<any[]>([])
   const [generating, setGenerating] = useState<string | null>(null)
   const [exporting, setExporting] = useState<string | null>(null)
+  const [reportError, setReportError] = useState('')
 
   // Audit Log State
-  const [auditRecords, setAuditRecords] = useState<any[]>([])
   const [auditSearch, setAuditSearch] = useState('')
   const [auditUserFilter, setAuditUserFilter] = useState('')
   const [auditActionFilter, setAuditActionFilter] = useState('')
 
   // ML Architecture State
-  const [mlInfo, setMlInfo] = useState<any>(null)
   const [mlRunning, setMlRunning] = useState(false)
   const [mlResult, setMlResult] = useState<any>(null)
 
-  useEffect(() => {
-    if (activeTab === 'architecture') {
-      fetchMLModelInfo().then(setMlInfo).catch(() => {})
-    }
-  }, [activeTab])
+  const reportsResource = useApiResource('report-definitions', signal => fetchReports(signal))
+  const mlInfoResource = useApiResource(
+    activeTab === 'architecture' ? 'ml-model-info' : 'ml-model-info-inactive',
+    signal => activeTab === 'architecture' ? fetchMLModelInfo(signal) : Promise.resolve(null)
+  )
+  const mlInfo = mlInfoResource.data
+  const auditParams: Record<string, string> = {}
+  if (auditUserFilter) auditParams.user = auditUserFilter
+  if (auditActionFilter) auditParams.action = auditActionFilter
+  if (auditSearch) auditParams.search = auditSearch
+  const auditKey = new URLSearchParams(auditParams).toString()
+  const auditResource = useApiResource(`reports-audit:${activeTab}:${auditKey}`, signal =>
+    activeTab === 'audit'
+      ? fetchAuditLog(Object.keys(auditParams).length ? auditParams : undefined, signal)
+      : Promise.resolve([])
+  )
+  const reports = reportsResource.data || []
+  const auditRecords = auditResource.data || []
 
   const handleRunFleetML = async () => {
     setMlRunning(true)
@@ -58,61 +63,23 @@ export default function Reports() {
     try {
       const res = await trainAutoML({ n_entities: 200, periods_per_entity: 6 })
       setMlResult(res)
-      fetchMLModelInfo().then(setMlInfo).catch(() => {})
+      mlInfoResource.retry()
     } catch (err: any) {
       setMlResult({ error: err.message || String(err) })
     }
     setMlRunning(false)
   }
 
-  const loadReports = () => {
-    fetchReports().then(data => {
-      if (Array.isArray(data) && data.length > 0) {
-        setReports(data)
-      } else {
-        setReports(REPORT_DEFINITIONS.map(d => ({ ...d, status: 'Ready' })))
-      }
-    }).catch(() => {
-      setReports(REPORT_DEFINITIONS.map(d => ({ ...d, status: 'Ready' })))
-    })
-  }
-
-  const loadAuditLogs = () => {
-    const params: Record<string, string> = {}
-    if (auditUserFilter) params.user = auditUserFilter
-    if (auditActionFilter) params.action = auditActionFilter
-    if (auditSearch) params.search = auditSearch
-    fetchAuditLog(Object.keys(params).length ? params : undefined)
-      .then(setAuditRecords)
-      .catch(() => setAuditRecords([]))
-  }
-
-  useEffect(() => {
-    loadReports()
-    loadAuditLogs()
-  }, [])
-
-  useEffect(() => {
-    if (activeTab === 'audit') loadAuditLogs()
-  }, [auditUserFilter, auditActionFilter, activeTab])
-
   const handleGenerate = async (id: string) => {
     setGenerating(id)
+    setReportError('')
     try {
-      await generateReport(id)
-      await loadReports()
-    } catch { /* ignore */ }
-    setGenerating(null)
-  }
-
-  const getReportPayload = async (id: string, fallbackReport: any) => {
-    if (fallbackReport.content) return fallbackReport.content
-    try {
-      const live = await getReport(id)
-      return live?.content || live || fallbackReport
-    } catch {
-      return fallbackReport
+      await generateReport(id, selectedEntity || undefined, assessmentPeriod)
+      reportsResource.retry()
+    } catch (error) {
+      setReportError(error instanceof Error ? error.message : 'Report generation failed.')
     }
+    setGenerating(null)
   }
 
   const handleExport = async (reportItem: any, format: string) => {
@@ -120,13 +87,9 @@ export default function Reports() {
     setExporting(exportKey)
     const printWindow = format === 'PDF' ? window.open('', '_blank', 'width=900,height=800') : null
     try {
-      let content = await getReportPayload(reportItem.id, reportItem)
-
-      if (!content || reportItem.status === 'Ready') {
-        const genRes = await generateReport(reportItem.id)
-        content = genRes?.data || genRes
-        await loadReports()
-      }
+      const genRes = await generateReport(reportItem.id, selectedEntity || undefined, assessmentPeriod)
+      let content = genRes?.data || genRes
+      reportsResource.retry()
 
       // Generate endpoint returns a report envelope, while the list endpoint
       // stores the report body under `content`. Normalize both shapes.
@@ -142,10 +105,10 @@ export default function Reports() {
 
         if (content.findings && Array.isArray(content.findings)) {
           headers = ['Finding ID', 'Title', 'Severity', 'Confidence (%)', 'Status']
-          rows = content.findings.map((f: any) => [f.id, f.title || f.name, f.severity, f.confidence ?? 0, f.status || 'Active'])
+          rows = content.findings.map((f: any) => [f.id, f.title || f.name, f.severity || '', f.confidence ?? '', f.status || ''])
         } else if (content.entities && Array.isArray(content.entities)) {
           headers = ['Entity ID', 'Sector', 'Criticality', 'Risk Score', 'Priority', 'Telemetry Coverage (%)']
-          rows = content.entities.map((e: any) => [e.id, e.sector, e.criticality, e.riskScore ?? 0, e.priority ?? 'Normal', e.telemetryCoverage ?? 0])
+          rows = content.entities.map((e: any) => [e.id, e.sector, e.criticality, e.riskScore ?? '', e.priority ?? '', e.telemetryCoverage ?? ''])
         } else if (content.benchmark && Array.isArray(content.benchmark)) {
           headers = ['Metric', 'Entity Value', 'Peer Median', 'Percentile', 'Assessment']
           rows = content.benchmark.map((b: any) => [b.metric, b.entityDisplay || b.entityValue, b.peerMedianDisplay || b.peerMedian, b.percentile, b.assessment])
@@ -163,48 +126,49 @@ export default function Reports() {
           .replace(/[_-]+/g, ' ')
           .replace(/^./, value => value.toUpperCase())
         const sections: { heading: string; content: any }[] = [
-          { heading: 'Report Information', content: { ReportID: reportItem.id, Title: reportItem.name, Description: reportItem.description, GeneratedAt: reportItem.generatedAt || new Date().toISOString() } },
+          { heading: 'Report Information', content: { ReportID: reportItem.id, Title: reportItem.name, Description: reportItem.description, GeneratedAt: reportItem.generatedAt || 'Not reported' } },
           ...Object.entries(content || {}).map(([key, value]) => ({ heading: prettyHeading(key), content: value }))
         ]
 
         printDossier(reportItem.name, sections, printWindow)
       }
     } catch (err) {
-      console.error('Export error:', err)
+      setReportError(err instanceof Error ? err.message : 'Report export failed.')
       printWindow?.close()
     }
     setExporting(null)
   }
 
-  const handleExportAuditCSV = async () => {
-    try {
-      const data = await exportAuditLog()
-      const headers = ['Timestamp', 'Examiner', 'Action', 'Finding ID', 'Entity ID', 'Status']
-      const rows = data.map((r: any) => [r.timestamp, r.user, r.action, r.finding || '', r.entityId || '', r.status || ''])
-      downloadCSV(`SAT-SA_Audit_Ledger_${new Date().toISOString().slice(0, 10)}`, headers, rows)
-    } catch {
-      const headers = ['Timestamp', 'Examiner', 'Action', 'Finding ID', 'Entity ID', 'Status']
-      const rows = auditRecords.map(r => [r.timestamp, r.user, r.action, r.finding || '', r.entityId || '', r.status || ''])
-      downloadCSV(`SAT-SA_Audit_Ledger_${new Date().toISOString().slice(0, 10)}`, headers, rows)
-    }
+  const handleExportAuditCSV = () => {
+    const headers = ['Timestamp', 'Examiner', 'Action', 'Finding ID', 'Entity ID', 'Status']
+    const rows = auditRecords.map((record: any) => [
+      record.timestamp, record.user, record.action, record.finding || '', record.entityId || '', record.status || ''
+    ])
+    downloadCSV(`SAT-SA_Filtered_Audit_Ledger_${new Date().toISOString().slice(0, 10)}`, headers, rows)
   }
 
-  const displayReports = REPORT_DEFINITIONS.map(def => {
-    const live = reports.find(r => r.id === def.id)
-    return {
-      ...def,
-      status: live?.status || 'Ready',
-      generatedAt: live?.generatedAt ? new Date(live.generatedAt).toLocaleString() + ' IST' : null,
-      content: live?.content
-    }
-  })
+  const displayReports = reports.map((report: any) => ({
+    ...report,
+    status: report.status || 'Not generated',
+    generatedAt: report.generatedAt ? new Date(report.generatedAt).toLocaleString() + ' IST' : null
+  }))
 
-  const filteredAudit = auditRecords.filter(r =>
+  const filteredAudit = auditRecords.filter((r: any) =>
     !auditSearch || (r.user || '').toLowerCase().includes(auditSearch.toLowerCase()) || 
     (r.action || '').toLowerCase().includes(auditSearch.toLowerCase()) || 
     (r.entityId || '').toLowerCase().includes(auditSearch.toLowerCase()) || 
     (r.finding || '').toLowerCase().includes(auditSearch.toLowerCase())
   )
+
+  if (activeTab === 'dossiers' && (reportsResource.loading || reportsResource.error || !reportsResource.data)) {
+    return <RequestState
+      loading={reportsResource.loading}
+      error={reportsResource.error}
+      retry={reportsResource.retry}
+      retryInSeconds={reportsResource.retryInSeconds}
+      loadingMessage="Loading report definitions…"
+    />
+  }
 
   return (
     <div className="p-6 max-w-[1700px] mx-auto space-y-6">
@@ -213,17 +177,16 @@ export default function Reports() {
         <div>
           <div className="flex items-center gap-3">
             <h1 className="page-title text-xl font-bold tracking-tight text-slate-900">Supervisory Reports & Governance</h1>
-            <TelemetryPulse active status="online" label="STATUTORY REPOSITORY" />
           </div>
           <p className="page-subtitle text-slate-500 text-xs mt-0.5">
-            Formal examination dossiers, cryptographic audit logs, and air-gap deployment specifications under IT Act Section 70
+            Period-scoped supervisory reports and an application-level tamper-evident audit chain.
           </p>
         </div>
 
         <div className="flex items-center gap-2">
           {activeTab === 'dossiers' && (
             <button 
-              onClick={loadReports}
+              onClick={reportsResource.retry}
               className="btn btn-sm flex items-center gap-1.5 text-slate-600 hover:text-slate-900"
               title="Refresh dossier compilation statuses"
             >
@@ -235,17 +198,18 @@ export default function Reports() {
               onClick={handleExportAuditCSV}
               className="btn btn-sm flex items-center gap-1.5 text-slate-600 hover:text-slate-900"
             >
-              <FileDown className="w-3.5 h-3.5 text-indigo-600" /> Export Audit Ledger (CSV)
+              <FileDown className="w-3.5 h-3.5 text-indigo-600" /> Export Filtered Audit Records (CSV)
             </button>
           )}
         </div>
       </div>
 
       {/* Tabs Selector */}
+      {reportError && <div role="alert" className="rounded border border-rose-200 bg-rose-50 px-4 py-2 text-sm text-rose-800">{reportError}</div>}
       <div className="flex gap-2 border-b border-slate-200 pb-1">
         {[
-          { id: 'dossiers', label: 'Supervisory Dossiers & Reports', icon: FileText, count: displayReports.length },
-          { id: 'audit', label: 'Immutable Audit Ledger', icon: History, count: auditRecords.length },
+          { id: 'dossiers', label: 'Supervisory Dossiers & Reports', icon: FileText, count: reportsResource.data?.length },
+          { id: 'audit', label: 'Tamper-Evident Audit Chain', icon: History, count: auditResource.data?.length },
           { id: 'architecture', label: 'Offline ML Architecture & Governance', icon: Cpu }
         ].map(tab => {
           const Icon = tab.icon
@@ -275,6 +239,7 @@ export default function Reports() {
       {/* Tab 1: Supervisory Dossiers */}
       {activeTab === 'dossiers' && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+          {displayReports.length === 0 && <p className="col-span-2 rounded border border-slate-200 bg-white p-5 text-sm text-slate-600">No report definitions are configured in the API.</p>}
           {displayReports.map(r => (
             <div key={r.id} className="card p-5 border-slate-200 hover:border-slate-300 transition-all flex flex-col justify-between">
               <div className="space-y-3">
@@ -313,7 +278,7 @@ export default function Reports() {
               <div className="flex flex-wrap items-center justify-between gap-2 mt-4 pt-3.5 border-t border-slate-200">
                 <button 
                   className="btn btn-primary btn-sm flex items-center gap-1.5 text-xs font-mono" 
-                  disabled={generating === r.id} 
+                  disabled={generating === r.id || (r.id === 'RPT-01' && !selectedEntity)} 
                   onClick={() => handleGenerate(r.id)}
                 >
                   {generating === r.id ? (
@@ -350,9 +315,18 @@ export default function Reports() {
         </div>
       )}
 
-      {/* Tab 2: Immutable Supervisory Audit Ledger */}
+      {/* Tab 2: Tamper-Evident Supervisory Audit Chain */}
       {activeTab === 'audit' && (
         <div className="space-y-4">
+          {(auditResource.loading || auditResource.error || !auditResource.data) && (
+            <RequestState
+              loading={auditResource.loading}
+              error={auditResource.error}
+              retry={auditResource.retry}
+              retryInSeconds={auditResource.retryInSeconds}
+              loadingMessage="Loading audit records…"
+            />
+          )}
           <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-50 p-3 rounded-lg border border-slate-200">
             <div className="flex flex-wrap items-center gap-3 flex-1">
               <div className="relative min-w-[260px]">
@@ -390,7 +364,7 @@ export default function Reports() {
             </div>
 
             <div className="text-xs font-mono text-slate-500">
-              Showing <strong className="text-indigo-600">{filteredAudit.length}</strong> immutable transactions
+              Showing <strong className="text-indigo-600">{filteredAudit.length}</strong> audit records
             </div>
           </div>
 
@@ -408,6 +382,9 @@ export default function Reports() {
                   </tr>
                 </thead>
                 <tbody>
+                  {!auditResource.loading && !auditResource.error && filteredAudit.length === 0 && (
+                    <tr><td colSpan={6} className="py-8 text-center text-sm text-slate-500">No audit records match the selected filters.</td></tr>
+                  )}
                   {filteredAudit.map((r, i) => (
                     <tr key={i} className="hover:bg-slate-100 transition-colors">
                       <td className="mono-id text-slate-600">
@@ -476,14 +453,33 @@ export default function Reports() {
               </div>
             </div>
 
+            {mlInfoResource.error && (
+              <div role="alert" className="rounded border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">
+                Model information is unavailable: {mlInfoResource.error.message}
+                <button
+                  className="btn btn-sm ml-3"
+                  disabled={mlInfoResource.retryInSeconds > 0}
+                  onClick={mlInfoResource.retry}
+                >
+                  {mlInfoResource.retryInSeconds > 0 ? `Retry in ${mlInfoResource.retryInSeconds}s` : 'Retry'}
+                </button>
+              </div>
+            )}
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 font-mono text-xs">
               {[
-                { label: 'Deployment Boundary', value: 'Strict Physical Air-Gap (Zero Outbound)', status: 'Verified' },
-                { label: 'Hosting Environment', value: 'NCIIPC Sovereign Enclave (Local Docker/K8s)', status: 'Isolated' },
-                { label: 'Machine Learning Model', value: `${mlInfo?.model_type || 'Ensemble (IsoForest + RF)'} [${mlInfo?.features?.length || 46} features]`, status: mlInfo?.status === 'trained' ? 'Loaded' : 'Ready' },
-                { label: 'Database Storage Node', value: 'Local MongoDB replica on :27017', status: 'Connected' },
-                { label: 'Target Efficiency Vectors', value: `${mlInfo?.targets?.length || 6} statutory evaluation targets`, status: 'Calibrated' },
-                { label: 'Statutory Authority', value: 'Section 70, Information Technology Act, 2000', status: 'Enforced' }
+                {
+                  label: 'Machine Learning Model',
+                  value: mlInfo
+                    ? `${mlInfo.model_type || 'Model type unavailable'} · ${mlInfo.features?.length ?? 'feature count unavailable'} features`
+                    : 'Not available',
+                  status: mlInfo?.status === 'trained' ? 'Loaded' : mlInfo ? 'Not trained' : mlInfoResource.loading ? 'Loading' : 'Unavailable'
+                },
+                {
+                  label: 'Target Efficiency Vectors',
+                  value: mlInfo?.targets?.length == null ? 'Not available' : `${mlInfo.targets.length} evaluation targets`,
+                  status: mlInfo ? 'Reported by API' : 'Unavailable'
+                }
               ].map((item, i) => (
                 <div key={i} className="flex items-center justify-between p-3 rounded-lg bg-slate-50 border border-slate-200">
                   <span className="text-slate-500">{item.label}</span>
@@ -503,7 +499,7 @@ export default function Reports() {
                 <div className="flex items-center justify-between">
                   <span className="font-bold text-indigo-900 flex items-center gap-1.5">
                     <CheckCircle className="w-4 h-4 text-indigo-600" />
-                    Offline ML Inference Result: {mlResult.message || `Evaluated ${mlResult.data?.fleetEvaluated || mlResult.training_samples || 11} CSE feature vectors`}
+                    Offline ML Inference Result: {mlResult.message || `Evaluated ${mlResult.data?.fleetEvaluated ?? mlResult.training_samples ?? 'an unreported number of'} CSE feature vectors`}
                   </span>
                   <span className="text-[10px] text-indigo-600">Deterministic Air-Gap Execution</span>
                 </div>

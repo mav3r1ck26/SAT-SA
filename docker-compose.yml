@@ -4,11 +4,11 @@ services:
     container_name: satsa-mongodb
     restart: unless-stopped
     ports:
-      - "27017:27017"
+      - "127.0.0.1:${MONGO_HOST_PORT:-27017}:27017"
     environment:
       MONGO_INITDB_DATABASE: satsa
-      MONGO_INITDB_ROOT_USERNAME: satsa
-      MONGO_INITDB_ROOT_PASSWORD: satsa_dev_2026
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME:?Set a MongoDB root username in the deployment environment}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD:?Set a MongoDB root password in the deployment environment}
     volumes:
       - satsa_mongo_data:/data/db
     healthcheck:

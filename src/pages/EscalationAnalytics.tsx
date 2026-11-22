@@ -1,27 +1,37 @@
-import React, { useEffect, useState } from 'react'
+import React from 'react'
 import { fetchEscalationAnalytics } from '../api/client'
 import { downloadCSV } from '../utils/export'
+import { useApp } from '../context/AppContext'
 import StatCard from '../components/StatCard'
 import { Donut } from '../components/charts'
 import { TelemetryPulse } from '../components/ui'
 import { AlertTriangle, Download, ShieldAlert, GitPullRequest, FastForward, Clock } from 'lucide-react'
+import { useEntityScope } from '../hooks/useEntityScope'
+import { useApiResource } from '../hooks/useApiResource'
+import RequestState from '../components/RequestState'
 
 export default function EscalationAnalytics() {
-  const [data, setData] = useState<any>(null)
+  const { assessmentPeriod } = useApp()
+  const entityId = useEntityScope()
+  const resource = useApiResource(
+    `escalation-analytics:${assessmentPeriod}:${entityId || 'ALL'}`,
+    signal => fetchEscalationAnalytics(assessmentPeriod, entityId, signal)
+  )
+  const data = resource.data
 
-  useEffect(() => {
-    fetchEscalationAnalytics().then(setData).catch(() => {})
-  }, [])
+  if (resource.loading || resource.error || !data) {
+    return <RequestState loading={resource.loading} error={resource.error} retry={resource.retry} retryInSeconds={resource.retryInSeconds} loadingMessage="Loading escalation analytics…" />
+  }
 
-  const escalatedCritical = data?.escalatedCritical ?? 2210
-  const notEscalatedCritical = data?.notEscalatedCritical ?? 680
+  const escalatedCritical = data.escalatedCritical
+  const notEscalatedCritical = data.notEscalatedCritical
   const totalCritical = escalatedCritical + notEscalatedCritical
-  const escalationRate = ((escalatedCritical / totalCritical) * 100).toFixed(1)
-  const delays = data?.delayDistribution ?? []
-  const paths = data?.paths ?? []
-  const severityMatrix = data?.severityMatrix ?? []
-  const anomalies = data?.anomalies ?? []
-  const escalated24h = data?.escalationOver24h ?? 0
+  const escalationRate = totalCritical ? ((escalatedCritical / totalCritical) * 100).toFixed(1) : '—'
+  const delays = data.delayDistribution
+  const paths = data.paths
+  const severityMatrix = data.severityMatrix
+  const anomalies = data.anomalies
+  const escalated24h = data.escalationOver24h
   const delayMax = Math.max(...delays.map((d: any) => d.count || 0), 1)
 
   const handleExport = () => {
@@ -29,7 +39,7 @@ export default function EscalationAnalytics() {
     const rows = [
       ['Critical Alerts Escalated', escalatedCritical],
       ['Critical Alerts Suppressed / Stalled', notEscalatedCritical],
-      ['Critical Escalation Ratio', `${escalationRate}%`],
+      ['Critical Escalation Ratio', escalationRate === '—' ? '—' : `${escalationRate}%`],
       ['Escalation Delay > 24h', escalated24h]
     ]
     downloadCSV(`SAT-SA_Escalation_Audit_${new Date().toISOString().slice(0, 10)}`, headers, rows)
@@ -54,11 +64,13 @@ export default function EscalationAnalytics() {
         </div>
       </div>
 
+      {totalCritical === 0 && <div role="status" className="rounded border border-slate-200 bg-white p-3 text-sm text-slate-500">No alert records for the selected entity and assessment period.</div>}
+
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
-        <StatCard label="Critical Alerts Escalated" value={escalatedCritical.toLocaleString()} trend={8} icon="shield" accent="info" />
-        <StatCard label="Critical Alerts Suppressed / Stalled" value={notEscalatedCritical.toLocaleString()} trend={-14} icon="alert" accent="danger" />
-        <StatCard label="Critical Escalation Ratio" value={`${escalationRate}%`} trend={2} icon="gap" accent="neutral" />
-        <StatCard label="Escalation Delay > 24h" value={String(escalated24h)} trend={-5} icon="cases" accent="warning" />
+        <StatCard label="Critical Alerts Escalated" value={escalatedCritical.toLocaleString()} icon="shield" accent="info" />
+        <StatCard label="Critical Alerts Suppressed / Stalled" value={notEscalatedCritical.toLocaleString()} icon="alert" accent="danger" />
+        <StatCard label="Critical Escalation Ratio" value={escalationRate === '—' ? '—' : `${escalationRate}%`} icon="gap" accent="neutral" />
+        <StatCard label="Escalation Delay > 24h" value={String(escalated24h)} icon="cases" accent="warning" />
       </div>
 
       {/* Escalation Rate Donut + Delay Distribution */}

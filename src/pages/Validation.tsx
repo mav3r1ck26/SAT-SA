@@ -1,21 +1,16 @@
-import React, { useEffect, useState } from 'react'
 import { fetchValidation } from '../api/client'
 import { downloadCSV } from '../utils/export'
 import { TelemetryPulse } from '../components/ui'
-import { CheckCircle2, AlertTriangle, ShieldCheck, Cpu, Download, BarChart2 } from 'lucide-react'
+import { ShieldCheck, Cpu, Download, BarChart2 } from 'lucide-react'
+import { useApiResource } from '../hooks/useApiResource'
+import RequestState from '../components/RequestState'
 
 export default function Validation() {
-  const [metrics, setMetrics] = useState<any>(null)
-
-  useEffect(() => {
-    fetchValidation().then(r => setMetrics(r.summary)).catch(() => setMetrics(null))
-  }, [])
-
-  const m = metrics ?? {
-    totalFindings: 147, confirmed: 89, dismissed: 24, inReview: 18, newFindings: 16,
-    truePositives: 89, falsePositives: 24, missedFindings: 16,
-    precision: 78.8, recall: 84.8, reviewAgreement: 76.9
+  const resource = useApiResource('validation-summary', signal => fetchValidation(signal))
+  if (resource.loading || resource.error || !resource.data) {
+    return <RequestState loading={resource.loading} error={resource.error} retry={resource.retry} retryInSeconds={resource.retryInSeconds} loadingMessage="Loading validation metrics…" />
   }
+  const m = resource.data.summary
 
   const confusionMatrix = [
     [m.truePositives, m.falsePositives],
@@ -132,7 +127,6 @@ export default function Validation() {
               <span className="flex items-center gap-2 text-slate-700 font-bold">
                 <BarChart2 className="w-4 h-4 text-indigo-600" /> Statistical Precision & Recall Evaluation
               </span>
-              <span className="text-[10px] font-mono text-indigo-600">F1-SCORE: 81.7%</span>
             </div>
 
             <div className="space-y-4 mt-2">

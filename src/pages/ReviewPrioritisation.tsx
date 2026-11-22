@@ -1,55 +1,54 @@
 import React, { useEffect, useState } from 'react'
 import { useApp } from '../context/AppContext'
-import { fetchReviewQueue, reviewFinding, logAuditAction, fetchFindingEvidence, fetchAlertEvidence } from '../api/client'
+import { ApiError, fetchReviewQueue, reviewFinding, fetchFindingEvidence, fetchAlertEvidence } from '../api/client'
 import { SeverityBadge, Confidence, TelemetryPulse, MitreBadge } from '../components/ui'
 import { 
-  AlertOctagon, CheckCircle2, UserCheck, ShieldAlert, 
-  ArrowRight, Eye, Download, Check, XCircle, Clock, RefreshCw, User,
-  ChevronDown, ChevronUp, Fingerprint, Shield, ExternalLink
+  CheckCircle2, Eye, Download, XCircle, RefreshCw,
+  ChevronDown, ChevronUp, Fingerprint, ExternalLink
 } from 'lucide-react'
 import { downloadCSV } from '../utils/export'
-
-const EXAMINERS = [
-  'Examiner-07 (Lead)',
-  'Examiner-03 (Senior)',
-  'Examiner-12 (Forensics)',
-  'Supervisor-02 (Admin)'
-]
+import { useEntityScope } from '../hooks/useEntityScope'
+import { useApiResource } from '../hooks/useApiResource'
+import RequestState from '../components/RequestState'
 
 export default function ReviewPrioritisation() {
-  const { setCurrentPage, setSelectedEntity } = useApp()
-  const [queue, setQueue] = useState<any[]>([])
+  const { setCurrentPage, setSelectedEntity, assessmentPeriod } = useApp()
+  const entityId = useEntityScope()
+  const resource = useApiResource(`review-queue:${assessmentPeriod}:${entityId || 'ALL'}`, signal =>
+    fetchReviewQueue(assessmentPeriod, entityId, signal)
+  )
+  const [expandedEvidenceId, setExpandedEvidenceId] = useState<string | null>(null)
+  const queue = resource.data || []
+  const evidenceResource = useApiResource(`review-evidence:${expandedEvidenceId || 'none'}`, signal => {
+    if (!expandedEvidenceId) return Promise.resolve(null)
+    const item = queue.find(candidate => (candidate.ref || candidate.findingId || candidate.id) === expandedEvidenceId)
+    if (item?.alertId) return fetchAlertEvidence(item.alertId, signal)
+    if (item?.findingId || item?.ref) return fetchFindingEvidence(item.findingId || item.ref, signal)
+    return Promise.reject(new Error('This review item has no linked evidence record.'))
+  })
   const [filterSeverity, setFilterSeverity] = useState('')
   const [adjudicatingId, setAdjudicatingId] = useState<string | null>(null)
   const [adjudicatedMap, setAdjudicatedMap] = useState<Record<string, string>>({})
-  const [assignedMap, setAssignedMap] = useState<Record<string, string>>({})
-  const [assigningId, setAssigningId] = useState<string | null>(null)
-  const [expandedEvidenceId, setExpandedEvidenceId] = useState<string | null>(null)
-  const [evidenceMap, setEvidenceMap] = useState<Record<string, any[]>>({})
-  const [loadingEvidence, setLoadingEvidence] = useState<Record<string, boolean>>({})
-
-  const loadQueue = () => {
-    fetchReviewQueue().then(items => {
-      setQueue(items || [])
-      const initialAdjudicated: Record<string, string> = {}
-      const initialAssigned: Record<string, string> = {}
-      for (const item of (items || [])) {
-        const key = item.ref || item.findingId || item.id
-        if (item.status && item.status !== 'New') {
-          initialAdjudicated[key] = item.status
-        }
-        if (item.reviewedBy) {
-          initialAssigned[key] = item.reviewedBy
-        }
-      }
-      setAdjudicatedMap(prev => ({ ...initialAdjudicated, ...prev }))
-      setAssignedMap(prev => ({ ...initialAssigned, ...prev }))
-    }).catch(() => setQueue([]))
-  }
+  const [actionError, setActionError] = useState('')
+  const [actionRetryAt, setActionRetryAt] = useState<number | null>(null)
+  const [clock, setClock] = useState(Date.now())
 
   useEffect(() => {
-    loadQueue()
-  }, [])
+    if (actionRetryAt === null) return
+    const timer = window.setInterval(() => setClock(Date.now()), 250)
+    return () => window.clearInterval(timer)
+  }, [actionRetryAt])
+  const actionRetryInSeconds = actionRetryAt === null ? 0 : Math.max(0, Math.ceil((actionRetryAt - clock) / 1000))
+
+  useEffect(() => {
+    if (!resource.data) return
+    const initialAdjudicated: Record<string, string> = {}
+    for (const item of resource.data) {
+      const key = item.ref || item.findingId || item.id
+      if (item.status && item.status !== 'New') initialAdjudicated[key] = item.status
+    }
+    setAdjudicatedMap(prev => ({ ...initialAdjudicated, ...prev }))
+  }, [resource.data])
 
   const filtered = queue.filter(item => {
     const sev = item.severity ?? item.priority?.severity
@@ -65,19 +64,22 @@ export default function ReviewPrioritisation() {
     ]
     const rows = filtered.map((item, idx) => [
       `#${idx + 1}`,
-      item.entityId || item.entity,
-      item.ref || item.findingId || `FIND-${idx + 1}`,
-      item.severity ?? 'High',
-      item.mitre || 'T1059',
-      item.reason || item.finding || item.title || 'Behavioral divergence',
-      item.evidenceCount ?? 0,
-      item.confidence ?? 85,
-      item.riskScore ?? item.score ?? 0,
-      item.suggestedAction || 'Mandatory Examiner Adjudication',
-      assignedMap[item.ref || item.findingId || String(idx)] || 'Unassigned',
+      item.entityId || item.entity || '',
+      item.ref || item.findingId || '',
+      item.severity ?? item.priority?.severity ?? '',
+      item.mitre || '',
+      item.reason || item.finding || item.title || '',
+      item.evidenceCount ?? '',
+      item.confidence ?? '',
+      item.riskScore ?? item.score ?? '',
+      item.suggestedAction || '',
       adjudicatedMap[item.ref || item.findingId || String(idx)] || 'Pending'
     ])
     downloadCSV(`SAT-SA_Review_Queue_${new Date().toISOString().slice(0, 10)}`, headers, rows)
+  }
+
+  if (resource.loading || resource.error || !resource.data) {
+    return <RequestState loading={resource.loading} error={resource.error} retry={resource.retry} retryInSeconds={resource.retryInSeconds} loadingMessage="Loading the review queue…" />
   }
 
   const handleOpenEntity = (item: any) => {
@@ -88,80 +90,38 @@ export default function ReviewPrioritisation() {
     }
   }
 
-  const handleAssign = async (itemKey: string, examiner: string, entityId?: string, findingId?: string) => {
-    setAssignedMap(prev => ({ ...prev, [itemKey]: examiner }))
-    setAssigningId(null)
-    try {
-      await logAuditAction({
-        user: examiner,
-        action: 'Examiner Assigned to Review Sample',
-        actionCategory: 'Finding',
-        entityId: entityId || 'CSE-014',
-        findingId: findingId || itemKey,
-        detail: `Designated examiner ${examiner} assigned for forensic review of sample ${itemKey}.`,
-        status: 'Assigned'
-      })
-    } catch {}
-  }
-
-  const handleToggleEvidence = async (itemKey: string, entityId: string) => {
+  const handleToggleEvidence = (itemKey: string) => {
     if (expandedEvidenceId === itemKey) {
       setExpandedEvidenceId(null)
       return
     }
     setExpandedEvidenceId(itemKey)
-    if (!evidenceMap[itemKey]) {
-      setLoadingEvidence(prev => ({ ...prev, [itemKey]: true }))
-      try {
-        const item = queue.find(candidate => (candidate.ref || candidate.findingId || candidate.id) === itemKey)
-        const res = item?.alertId
-          ? await fetchAlertEvidence(item.alertId)
-          : item?.findingId
-            ? await fetchFindingEvidence(item.findingId)
-            : entityId ? await fetchAlertEvidence(itemKey) : null
-        if (res?.timeline?.length) {
-          const events = res.timeline.map((evt: any) => ({
-            event: evt.event || evt.eventType,
-            actor: evt.actor || 'System',
-            role: evt.role || 'Supervisory Monitor',
-            time: evt.eventTime ? new Date(evt.eventTime).toLocaleTimeString('en-US', { hour12: false }) + ' IST' : (evt.time || '12:00:00 IST'),
-            severity: evt.eventType === 'Alert Created' ? 'Critical' : evt.eventType === 'Escalation' ? 'High' : 'Low',
-            meta: (evt.metadata && evt.metadata.join(', ')) || `Type: ${evt.eventType}`
-          }))
-          setEvidenceMap(prev => ({ ...prev, [itemKey]: events }))
-        } else setEvidenceMap(prev => ({ ...prev, [itemKey]: [] }))
-      } catch {
-        setEvidenceMap(prev => ({ ...prev, [itemKey]: [] }))
-      }
-      setLoadingEvidence(prev => ({ ...prev, [itemKey]: false }))
-    }
   }
 
-  const handleAdjudicate = async (itemKey: string, findingId: string, status: 'Confirmed' | 'Rejected', entityId?: string) => {
-    setAdjudicatingId(itemKey)
-    const reviewer = assignedMap[itemKey] || 'Lead Supervisory Examiner'
-    try {
-      if (findingId) {
-        await reviewFinding(findingId, {
-          status,
-          reviewer,
-          note: `Adjudicated directly from Supervisory Prioritisation Queue as ${status}.`
-        })
-      } else {
-        await logAuditAction({
-          user: reviewer,
-          action: `Finding Adjudicated: ${status}`,
-          actionCategory: 'Finding',
-          entityId: entityId || 'CSE-014',
-          detail: `Examiner adjudicated sample ${itemKey} as ${status}.`,
-          status
-        })
-      }
-      setAdjudicatedMap(prev => ({ ...prev, [itemKey]: status }))
-    } catch {
-      setAdjudicatedMap(prev => ({ ...prev, [itemKey]: status }))
+  const handleAdjudicate = async (itemKey: string, findingId: string | undefined, status: 'Confirmed' | 'Rejected') => {
+    if (actionRetryInSeconds > 0) return
+    if (!findingId) {
+      setActionError('This queue item is not linked to a persisted finding and cannot be adjudicated.')
+      return
     }
-    setAdjudicatingId(null)
+    setAdjudicatingId(itemKey)
+    setActionError('')
+    try {
+      await reviewFinding(findingId, {
+        status,
+        note: `Adjudicated directly from Supervisory Prioritisation Queue as ${status}.`
+      })
+      setActionRetryAt(null)
+      setAdjudicatedMap(prev => ({ ...prev, [itemKey]: status }))
+      resource.retry()
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : 'Finding review could not be saved.')
+      if (error instanceof ApiError && error.retryAfterMs !== undefined) {
+        setActionRetryAt(Date.now() + error.retryAfterMs)
+      }
+    } finally {
+      setAdjudicatingId(null)
+    }
   }
 
   return (
@@ -170,10 +130,10 @@ export default function ReviewPrioritisation() {
         <div>
           <div className="flex items-center gap-3">
             <h1 className="page-title text-xl font-bold tracking-tight text-slate-900">Supervisory Manual Review Queue</h1>
-            <TelemetryPulse active status="alert" label="EXAMINER ADJUDICATION QUEUE" />
+            <TelemetryPulse active={filtered.length > 0} status={filtered.length > 0 ? 'alert' : 'online'} label={filtered.length > 0 ? 'PENDING REVIEW ITEMS' : 'NO PENDING ITEMS'} />
           </div>
           <p className="page-subtitle text-slate-500 text-xs mt-0.5">
-            Prioritised alert and case samples ranked by ensemble ML risk divergence, requiring statutory examiner adjudication
+            Persisted findings and telemetry evidence prioritized for the selected entity and assessment period.
           </p>
         </div>
 
@@ -197,7 +157,7 @@ export default function ReviewPrioritisation() {
           </button>
 
           <button 
-            onClick={loadQueue}
+            onClick={resource.retry}
             className="btn btn-sm flex items-center gap-1.5 text-slate-500 hover:text-slate-800"
             title="Reload review queue"
           >
@@ -206,13 +166,15 @@ export default function ReviewPrioritisation() {
         </div>
       </div>
 
+      {actionError && <p role="alert" className="rounded border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">{actionError}</p>}
+
       <div className="flex items-center justify-between gap-3 bg-slate-50 p-3 rounded-lg border border-slate-200">
         <div className="flex items-center gap-3">
           <span className="badge text-xs font-mono bg-indigo-50 text-indigo-600 border-indigo-200">
-            AUTOMATED ENSEMBLE RANKING
+            API-REPORTED PRIORITIZATION
           </span>
           <span className="text-xs text-slate-600 font-mono">
-            Samples prioritised by ML divergence score and evidence gaps. Designed to support human examiner adjudication.
+            Priority reflects finding and telemetry evidence recorded for the selected scope.
           </span>
         </div>
         <div className="text-xs font-mono text-slate-500">
@@ -225,11 +187,24 @@ export default function ReviewPrioritisation() {
           const itemKey = item.ref || item.findingId || String(idx)
           const isCritical = (item.severity ?? item.priority?.severity) === 'Critical'
           const adjudicatedStatus = adjudicatedMap[itemKey]
-          const assignedExaminer = assignedMap[itemKey]
-          const isAssigning = assigningId === itemKey
           const isEvidenceExpanded = expandedEvidenceId === itemKey
-          const timeline = evidenceMap[itemKey] || []
-          const isLoadingEvidence = loadingEvidence[itemKey]
+          const timeline = expandedEvidenceId === itemKey
+            ? (evidenceResource.data?.timeline || []).map((evt: any) => ({
+              event: evt.event || evt.eventType || 'Event type not reported',
+              actor: evt.actor || 'Not reported',
+              role: evt.role || 'Not reported',
+              time: evt.eventTime
+                ? new Date(evt.eventTime).toLocaleTimeString('en-US', { hour12: false }) + ' IST'
+                : evt.time || 'Not reported',
+              severity: evt.eventType === 'Alert Created' ? 'Critical' : evt.eventType === 'Escalation' ? 'High' : evt.severity || 'Unknown',
+              meta: (evt.metadata && evt.metadata.join(', ')) || 'No metadata reported'
+            }))
+            : []
+          const isLoadingEvidence = expandedEvidenceId === itemKey && evidenceResource.loading
+          const severity = item.severity ?? item.priority?.severity
+          const confidence = item.confidence
+          const evidenceCount = item.evidenceCount
+          const riskScore = item.riskScore ?? item.score
 
           return (
             <div key={itemKey} className="card overflow-hidden border-slate-200 hover:border-slate-300 transition-all">
@@ -247,7 +222,7 @@ export default function ReviewPrioritisation() {
                   <span className="text-[11px] font-mono font-bold uppercase tracking-wider text-indigo-600 bg-white px-2 py-0.5 rounded border border-slate-200">
                     PRIORITY #{String(item.priority ?? idx + 1).padStart(2, '0')}
                   </span>
-                  <SeverityBadge severity={item.severity ?? 'High'} />
+                  <SeverityBadge severity={severity || 'Unknown'} />
                   <span className="mono-id text-indigo-600 font-bold">{item.entityId || item.entity}</span>
                   <span className="text-slate-300">/</span>
                   <span className="mono-id text-slate-600">{item.ref || item.findingId}</span>
@@ -265,14 +240,9 @@ export default function ReviewPrioritisation() {
                 </div>
 
                 <div className="flex items-center gap-4 text-xs font-mono">
-                  {assignedExaminer && (
-                    <span className="text-slate-600 bg-white px-2.5 py-0.5 rounded border border-indigo-200 flex items-center gap-1.5">
-                      <User className="w-3 h-3 text-indigo-600" /> {assignedExaminer}
-                    </span>
-                  )}
-                  <Confidence value={item.confidence ?? 85} compact />
+                  {confidence == null ? <span>Confidence not reported</span> : <Confidence value={confidence} compact />}
                   <span className="text-slate-500 bg-white px-2 py-0.5 rounded border border-slate-200">
-                    {item.evidenceCount ?? 0} evidence records
+                    {evidenceCount == null ? 'Evidence count not reported' : `${evidenceCount} evidence records`}
                   </span>
                 </div>
               </div>
@@ -280,7 +250,7 @@ export default function ReviewPrioritisation() {
               {/* Body */}
               <div className="p-5 space-y-4">
                 <div className="flex flex-wrap items-center gap-2">
-                  <p className="text-sm font-semibold text-slate-900">{item.reason || item.finding || item.title}</p>
+                  <p className="text-sm font-semibold text-slate-900">{item.reason || item.finding || item.title || 'Finding summary not reported'}</p>
                   {(item.findingType || item.source) && <span className="badge border border-indigo-200 bg-indigo-50 text-indigo-700 text-[10px] font-mono">{item.findingType || item.source}</span>}
                   {item.alertCategory && <span className="badge border border-slate-300 bg-white text-slate-600 text-[10px] font-mono">{item.alertCategory} alert</span>}
                 </div>
@@ -294,30 +264,11 @@ export default function ReviewPrioritisation() {
                         <span>{r}</span>
                       </li>
                     ))}
+                    {!(item.reasons || item.reasonWrap || [item.reason]).some(Boolean) && (
+                      <li className="text-xs text-slate-500">No trigger details were reported.</li>
+                    )}
                   </ul>
                 </div>
-
-                {/* Inline Examiner Assignment Dropdown */}
-                {isAssigning && (
-                  <div className="p-3 bg-white rounded-md border border-slate-300 flex flex-wrap items-center gap-2">
-                    <span className="text-xs font-mono text-indigo-600">Select Designated Examiner:</span>
-                    {EXAMINERS.map(ex => (
-                      <button
-                        key={ex}
-                        onClick={() => handleAssign(itemKey, ex, item.entityId || item.entity, item.ref || item.findingId)}
-                        className="btn btn-sm text-xs font-mono text-slate-700 border-slate-300 hover:border-indigo-600"
-                      >
-                        {ex}
-                      </button>
-                    ))}
-                    <button
-                      onClick={() => setAssigningId(null)}
-                      className="btn btn-sm text-xs font-mono text-slate-400 ml-auto"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                )}
 
                 {/* Inline Evidence Chain-of-Custody Timeline Drawer */}
                 {isEvidenceExpanded && (
@@ -340,6 +291,17 @@ export default function ReviewPrioritisation() {
                     {isLoadingEvidence ? (
                       <div className="text-xs font-mono text-slate-500 py-3 text-center">
                         Loading live forensic event stream for {item.entityId || item.entity}...
+                      </div>
+                    ) : expandedEvidenceId === itemKey && evidenceResource.error ? (
+                      <div role="alert" className="text-sm text-rose-700">
+                        Evidence unavailable: {evidenceResource.error.message}
+                        <button
+                          className="btn btn-sm ml-3"
+                          disabled={evidenceResource.retryInSeconds > 0}
+                          onClick={evidenceResource.retry}
+                        >
+                          {evidenceResource.retryInSeconds > 0 ? `Retry in ${evidenceResource.retryInSeconds}s` : 'Retry'}
+                        </button>
                       </div>
                     ) : (
                       <div className="space-y-2 border-l-2 border-slate-200 ml-2 pl-4 py-1">
@@ -372,29 +334,21 @@ export default function ReviewPrioritisation() {
                 {/* Card Action Controls */}
                 <div className="flex flex-wrap items-center justify-between gap-3 text-xs font-mono pt-1">
                   <div className="flex items-center gap-4 text-slate-500">
-                    <span>Composite Risk: <strong className="text-rose-600 font-bold">{item.riskScore ?? item.score ?? 0}/100</strong></span>
+                    <span>Composite Risk: <strong className="text-rose-600 font-bold">{riskScore == null ? 'Not reported' : `${riskScore}/100`}</strong></span>
                     <span>·</span>
-                    <span>Fidelity: <strong className="text-indigo-600 font-bold">{item.confidence ?? 0}%</strong></span>
+                    <span>Fidelity: <strong className="text-indigo-600 font-bold">{confidence == null ? 'Not reported' : `${confidence}%`}</strong></span>
                     <span>·</span>
-                    <span className="text-slate-600 italic">Action: {item.suggestedAction || 'Mandatory Examiner Adjudication'}</span>
+                    <span className="text-slate-600 italic">Action: {item.suggestedAction || 'Not reported'}</span>
                   </div>
 
                   <div className="flex items-center gap-2 ml-auto">
                     <button 
-                      onClick={() => handleToggleEvidence(itemKey, item.entityId || item.entity)}
+                      onClick={() => handleToggleEvidence(itemKey)}
                       className="btn btn-primary btn-sm flex items-center gap-1.5 text-xs font-mono"
                     >
                       <Eye className="w-3.5 h-3.5" /> 
                       {isEvidenceExpanded ? 'Collapse Telemetry' : 'Inspect Telemetry'}
                       {isEvidenceExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-                    </button>
-
-                    <button 
-                      onClick={() => setAssigningId(isAssigning ? null : itemKey)}
-                      className="btn btn-sm flex items-center gap-1.5 text-slate-600 text-xs font-mono hover:text-slate-900"
-                    >
-                      <UserCheck className="w-3.5 h-3.5 text-indigo-600" /> 
-                      {assignedExaminer ? 'Reassign' : 'Assign Examiner'}
                     </button>
 
                     {adjudicatedStatus ? (
@@ -404,20 +358,20 @@ export default function ReviewPrioritisation() {
                     ) : (
                       <div className="flex items-center gap-1.5">
                         <button 
-                          onClick={() => handleAdjudicate(itemKey, item.ref || item.findingId, 'Confirmed', item.entityId || item.entity)}
-                          disabled={adjudicatingId === itemKey}
+                          onClick={() => handleAdjudicate(itemKey, item.findingId || item.ref, 'Confirmed')}
+                          disabled={adjudicatingId === itemKey || actionRetryInSeconds > 0}
                           className="btn btn-sm text-emerald-600 border-emerald-200 hover:bg-emerald-100 text-xs font-mono"
                           title="Confirm finding into statutory audit ledger"
                         >
-                          <CheckCircle2 className="w-3.5 h-3.5 mr-1 inline" /> Confirm
+                          <CheckCircle2 className="w-3.5 h-3.5 mr-1 inline" /> {actionRetryInSeconds > 0 ? `Retry in ${actionRetryInSeconds}s` : 'Confirm'}
                         </button>
                         <button 
-                          onClick={() => handleAdjudicate(itemKey, item.ref || item.findingId, 'Rejected', item.entityId || item.entity)}
-                          disabled={adjudicatingId === itemKey}
+                          onClick={() => handleAdjudicate(itemKey, item.findingId || item.ref, 'Rejected')}
+                          disabled={adjudicatingId === itemKey || actionRetryInSeconds > 0}
                           className="btn btn-sm text-rose-600 border-rose-200 hover:bg-rose-100 text-xs font-mono"
                           title="Dismiss finding as operational baseline variance"
                         >
-                          <XCircle className="w-3.5 h-3.5 mr-1 inline" /> Dismiss
+                          <XCircle className="w-3.5 h-3.5 mr-1 inline" /> {actionRetryInSeconds > 0 ? `Retry in ${actionRetryInSeconds}s` : 'Dismiss'}
                         </button>
                       </div>
                     )}

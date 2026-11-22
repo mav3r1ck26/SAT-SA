@@ -145,40 +145,26 @@ class SOCEfficiencyRegressor:
         X = X.reindex(columns=self.feature_names, fill_value=0)
         X_scaled = self.scaler.transform(X)
         
-        # Get predictions from all trees for confidence
-        if hasattr(self.base_model, 'estimators_') and isinstance(self.base_model.estimators_, np.ndarray):
-            # RandomForest (not MultiOutputRegressor) - estimators_ is array of trees
-            all_preds = []
-            for estimator in self.base_model.estimators_.ravel():
-                all_preds.append(estimator.predict(self.scaler.transform(X)))
-            all_preds = np.array(all_preds)  # (n_trees, n_samples, n_targets)
-            
-            mean_pred = np.mean(all_preds, axis=0)
-            std_pred = np.std(all_preds, axis=0)
-            
-            # Confidence based on prediction variance
-            confidence = 1 / (1 + std_pred)
-        elif hasattr(self.base_model, 'estimators_'):
-            # MultiOutputRegressor - estimators_ is list of estimators per target
-            # Use single model prediction with default confidence
-            mean_pred = self.base_model.predict(self.scaler.transform(X))
-            # Ensure 2D
-            if mean_pred.ndim == 1:
-                mean_pred = mean_pred.reshape(-1, 1)
-            confidence = np.ones_like(mean_pred) * 0.8
-        else:
-            # Single model (RF or GBR) - prediction is (n_samples, n_targets)
-            mean_pred = self.base_model.predict(self.scaler.transform(X))
-            # Ensure 2D
-            if mean_pred.ndim == 1:
-                mean_pred = mean_pred.reshape(-1, 1)
-            confidence = np.ones_like(mean_pred) * 0.8
-        
-        # Ensure 2D for consistent indexing
+        mean_pred = self.predict(df)
         if mean_pred.ndim == 1:
             mean_pred = mean_pred.reshape(-1, 1)
-        if confidence.ndim == 1:
-            confidence = confidence.reshape(-1, 1)
+        prediction_spread = np.full_like(mean_pred, np.nan, dtype=float)
+        estimators = getattr(self.base_model, 'estimators_', None)
+        if estimators is not None:
+            if isinstance(self.base_model, MultiOutputRegressor):
+                for target_index, regressor in enumerate(estimators):
+                    trees = getattr(regressor, 'estimators_', None)
+                    if trees is not None and len(trees):
+                        tree_predictions = np.stack([tree.predict(X_scaled) for tree in trees])
+                        prediction_spread[:, target_index] = np.std(tree_predictions, axis=0)
+            else:
+                trees = np.asarray(estimators, dtype=object).ravel()
+                if len(trees):
+                    tree_predictions = np.stack([tree.predict(X_scaled) for tree in trees])
+                    if tree_predictions.ndim == 3 and tree_predictions.shape[2] == mean_pred.shape[1]:
+                        prediction_spread = np.std(tree_predictions, axis=0)
+                    elif tree_predictions.ndim == 2 and mean_pred.shape[1] == 1:
+                        prediction_spread[:, 0] = np.std(tree_predictions, axis=0)
         
         results = []
         for i in range(len(X)):
@@ -186,7 +172,9 @@ class SOCEfficiencyRegressor:
             for j, target in enumerate(self.target_names):
                 result[target] = {
                     'prediction': float(mean_pred[i, j]),
-                    'confidence': float(confidence[i, j]),
+                    'confidence': None,
+                    'prediction_spread': float(prediction_spread[i, j]) if np.isfinite(prediction_spread[i, j]) else None,
+                    'uncertainty_method': 'tree_prediction_standard_deviation' if np.isfinite(prediction_spread[i, j]) else 'not_available',
                     'interpretation': self._interpret_efficiency(target, mean_pred[i, j])
                 }
             results.append(result)

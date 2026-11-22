@@ -6,12 +6,12 @@ export const telemetrySchema = new Schema({
   assetGroup: { type: String, required: true },
   criticality: { type: String, enum: ['Critical', 'High', 'Medium', 'Low'], default: 'Medium' },
 
-  expectedCoverage: { type: Number, default: 100, min: 0, max: 100 },
-  observedCoverage: { type: Number, default: 100, min: 0, max: 100 },
+  expectedCoverage: { type: Number, min: 0, max: 100 },
+  observedCoverage: { type: Number, min: 0, max: 100 },
 
   // Backward-compatible aliases
-  expected: { type: Number, default: 100 },
-  observed: { type: Number, default: 100 },
+  expected: { type: Number },
+  observed: { type: Number },
 
   alertGeneration: { type: Number, min: 0, max: 100 },
   investigationEvidence: { type: Number, min: 0, max: 100 },
@@ -19,7 +19,7 @@ export const telemetrySchema = new Schema({
 
   // Negative space classification
   status: { type: String, enum: ['Monitored', 'Partially Monitored', 'Unmonitored', 'Unknown', 'Data Missing'], default: 'Unknown' },
-  confidence: { type: Number, default: 50, min: 0, max: 100 },
+  confidence: { type: Number, min: 0, max: 100 },
 
   // Evidence for the assessment
   evidence: {
@@ -28,7 +28,7 @@ export const telemetrySchema = new Schema({
     notes: { type: String }
   },
 
-  period: { type: String, default: 'Q2 FY 2026-27' },
+  period: { type: String, required: true },
 
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now }

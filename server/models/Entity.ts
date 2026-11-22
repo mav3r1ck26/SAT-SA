@@ -6,10 +6,11 @@ export const entitySchema = new Schema({
   sector: { type: String, required: true },
   region: { type: String, required: true },
   criticality: { type: String, enum: ['Critical', 'High', 'Medium', 'Low'], required: true },
-  dataCompleteness: { type: Number, default: 100, min: 0, max: 100 },
-  telemetryCoverage: { type: Number, default: 100, min: 0, max: 100 },
-  assessmentPeriod: { type: String, default: 'Q2 FY 2026-27' },
-  assessmentStatus: { type: String, enum: ['Compliant', 'Monitor', 'Review Required', 'Non-Compliant'], default: 'Compliant' },
+  dataCompleteness: { type: Number, min: 0, max: 100 },
+  telemetryCoverage: { type: Number, min: 0, max: 100 },
+  assessmentPeriod: { type: String },
+  assessmentStatus: { type: String, enum: ['Compliant', 'Monitor', 'Review Required', 'Non-Compliant'] },
+  dataProvenance: { type: String, enum: ['submitted', 'sample', 'derived', 'legacy'] },
   status: { type: String, enum: ['Active', 'Inactive', 'Under Review'], default: 'Active' },
   lastSubmission: { type: Date }
 }, { timestamps: true })

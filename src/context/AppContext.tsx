@@ -50,7 +50,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const pendingEntityRef = useRef<string | null>(initialRoute.entityId)
   const [selectedFindingId, setSelectedFindingId] = useState<string | null>(null)
   const [assessmentPeriod, setAssessmentPeriod] = useState('Q2 FY 2026–27')
-  const [entityFilter, setEntityFilter] = useState('All CSEs')
+  const [entityFilter, setEntityFilter] = useState('ALL')
 
   const setCurrentPage = (page: string) => {
     const path = pageToPath(page, pendingEntityRef.current || selectedEntity)

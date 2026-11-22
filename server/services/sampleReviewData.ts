@@ -2,6 +2,7 @@ import { Finding } from '../models/Finding'
 import { Alert } from '../models/Alert'
 import { Case } from '../models/Case'
 import { EvidenceEvent } from '../models/EvidenceEvent'
+import { DEFAULT_ASSESSMENT_PERIOD } from './assessmentPeriods'
 
 // Stable, realistic examples give the review queue distinct detection classes
 // while keeping repeated runs idempotent and preserving examiner decisions.
@@ -52,7 +53,7 @@ export async function seedSampleReviewFindings() {
   for (const sample of reviewSamples) {
     await Finding.updateOne(
       { id: sample.id },
-      { $setOnInsert: { ...sample, status: 'New', examinerDecision: 'Pending', createdAt: new Date() } },
+      { $setOnInsert: { ...sample, period: DEFAULT_ASSESSMENT_PERIOD, dataProvenance: 'sample', status: 'New', examinerDecision: 'Pending', createdAt: new Date() } },
       { upsert: true }
     )
   }
@@ -76,6 +77,7 @@ export async function seedSampleReviewFindings() {
       const time = linkedCase?.investigationStartedAt || alert?.createdAt || new Date()
       await EvidenceEvent.create({
         entityId: sample.entityId,
+        period: DEFAULT_ASSESSMENT_PERIOD,
         findingId: sample.id,
         caseId: linkedCase?.id,
         alertId: alert?.id,

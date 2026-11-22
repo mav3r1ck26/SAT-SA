@@ -34,7 +34,9 @@ export const caseSchema = new Schema({
   escalationRecorded: { type: Boolean, default: false },
   escalationDetails: { type: String },
 
-  period: { type: String, default: 'Q2 FY 2026-27' },
+  period: { type: String, required: true },
+  dataProvenance: { type: String, enum: ['submitted', 'sample', 'derived', 'legacy'], default: 'submitted' },
+  ingestionBatchId: { type: Schema.Types.ObjectId, ref: 'IngestionBatch' },
 
   // Analytics fields
   isAnomalous: { type: Boolean, default: false },

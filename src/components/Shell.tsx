@@ -4,10 +4,11 @@ import {
   ListTodo, FileText, Upload, Settings as SettingsIcon, Search,
   ShieldCheck, AlertTriangle, Database, Clock, ChevronDown, Check, X,
   Radio, HardDrive, Shield, Sparkles, UserCheck, ArrowUpRight,
-  BarChart3, Activity, TriangleAlert
+  BarChart3, Activity, TriangleAlert, LogOut
 } from 'lucide-react'
 import { useApp } from '../context/AppContext'
-import { notifications as initialNotifications } from '../data/mockData'
+import { useAuth } from '../context/AuthContext'
+import { fetchEntities, fetchFindings, fetchNotifications, markNotificationsRead } from '../api/client'
 
 interface NavItem {
   id: string
@@ -74,42 +75,56 @@ const primaryNav: NavItem[] = [
   { id: 'anomalies', label: 'Anomalies', description: 'Filter and investigate operational outliers', icon: TriangleAlert }
 ]
 
-const searchCatalog = [
-  { type: 'entity', id: 'CSE-001', name: 'National Power Grid Op.', sector: 'Power' },
-  { type: 'entity', id: 'CSE-008', name: 'State Telecom Network', sector: 'Telecom' },
-  { type: 'entity', id: 'CSE-014', name: 'Central Power Authority (Critical Anomaly)', sector: 'Power' },
-  { type: 'entity', id: 'CSE-021', name: 'Regional Transport Alliance', sector: 'Transport' },
-  { type: 'entity', id: 'CSE-027', name: 'National Banking Services (SWIFT)', sector: 'Banking' },
-  { type: 'entity', id: 'CSE-034', name: 'Renewable Energy Group', sector: 'Energy' },
-  { type: 'entity', id: 'CSE-041', name: 'Central Defence Data Ctr', sector: 'Defence' },
-  { type: 'entity', id: 'CSE-050', name: 'Govt Digital Services', sector: 'Government' },
-  { type: 'entity', id: 'CSE-058', name: 'National Health Net', sector: 'Health' },
-  { type: 'entity', id: 'CSE-063', name: 'Metropolitan Water Board', sector: 'Water' },
-  { type: 'entity', id: 'CSE-070', name: 'Freight Rail Network', sector: 'Transport' },
-  { type: 'finding', id: 'EG-181', name: 'Rapid Closure Without Investigation (<5m)', sector: 'CSE-014' },
-  { type: 'finding', id: 'EG-182', name: 'Critical Alert Without Escalation', sector: 'CSE-014' },
-  { type: 'finding', id: 'EG-183', name: 'Repeated Template Investigation Disposition', sector: 'CSE-027' },
-  { type: 'finding', id: 'NS-186', name: 'Missing Telemetry from OT/ICS SCADA Bus', sector: 'CSE-014' },
-  { type: 'module', id: 'overview', name: 'Command Overview (Fleet Attention Index)', sector: 'Module' },
-  { type: 'module', id: 'entities', name: 'Entity Assessment & Peer Benchmarking', sector: 'Module' },
-  { type: 'module', id: 'gaps', name: 'Execution Gap Divergence Registry', sector: 'Module' },
-  { type: 'module', id: 'negative', name: 'Negative Space & Sensor Blind Spots', sector: 'Module' },
-  { type: 'module', id: 'prioritisation', name: 'Examiner Manual Review Queue & Evidence', sector: 'Module' },
-  { type: 'module', id: 'ingestion', name: 'Air-Gap Telemetry Ingestion & QC', sector: 'Module' },
-  { type: 'module', id: 'reports', name: 'Supervisory Dossiers, Audit & Governance', sector: 'Module' }
-]
-
 export default function Shell({ children }: { children: React.ReactNode }) {
   const { currentPage, setCurrentPage, setSelectedEntity, assessmentPeriod, setAssessmentPeriod } = useApp()
+  const { user, logout } = useAuth()
   const [showNotifications, setShowNotifications] = useState(false)
   const [showPeriodMenu, setShowPeriodMenu] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [searchFocused, setSearchFocused] = useState(false)
-  const [notifications, setNotifications] = useState(initialNotifications)
+  const [notifications, setNotifications] = useState<any[]>([])
+  const [notificationError, setNotificationError] = useState('')
+  const [searchResults, setSearchResults] = useState<any[]>([])
+  const [searchError, setSearchError] = useState('')
   const [timeString, setTimeString] = useState('')
   const searchRef = useRef<HTMLDivElement>(null)
 
   const unreadCount = notifications.filter(n => !n.read).length
+
+  useEffect(() => {
+    let active = true
+    const query = searchQuery.trim()
+    if (query.length < 2) {
+      setSearchResults([])
+      setSearchError('')
+      return
+    }
+    const timer = window.setTimeout(() => {
+      Promise.all([
+        fetchEntities({ search: query, period: assessmentPeriod }),
+        fetchFindings({ searching: query })
+      ]).then(([entities, findings]) => {
+        if (!active) return
+        setSearchResults([
+          ...entities.map((entity: any) => ({ type: 'entity', id: entity.id, name: entity.name, sector: entity.sector })),
+          ...findings.map((finding: any) => ({ type: 'finding', id: finding.id, name: finding.title, sector: finding.entityId }))
+        ].slice(0, 8))
+        setSearchError('')
+      }).catch(error => {
+        if (!active) return
+        setSearchResults([])
+        setSearchError(error instanceof Error ? error.message : 'Search could not be completed.')
+      })
+    }, 250)
+    return () => { active = false; window.clearTimeout(timer) }
+  }, [searchQuery, assessmentPeriod])
+
+  useEffect(() => {
+    if (!showNotifications) return
+    fetchNotifications()
+      .then(result => { setNotifications(result.notifications || []); setNotificationError('') })
+      .catch(error => setNotificationError(error instanceof Error ? error.message : 'Notifications are unavailable.'))
+  }, [showNotifications])
 
   useEffect(() => {
     const updateTime = () => {
@@ -155,32 +170,28 @@ export default function Shell({ children }: { children: React.ReactNode }) {
     setSearchQuery('')
   }
 
-  const handleSearchResultClick = (item: typeof searchCatalog[0]) => {
+  const handleSearchResultClick = (item: any) => {
     if (item.type === 'entity') {
       setSelectedEntity(item.id)
       setCurrentPage('entity')
     } else if (item.type === 'finding') {
       setCurrentPage('gaps')
-    } else if (item.type === 'module') {
-      navigate(item.id)
     }
     setSearchFocused(false)
     setSearchQuery('')
   }
 
-  const markAllRead = () => {
-    setNotifications(prev => prev.map(n => ({ ...n, read: true })))
+  const markAllRead = async () => {
+    try {
+      await markNotificationsRead()
+      setNotifications(prev => prev.map(n => ({ ...n, read: true })))
+      setNotificationError('')
+    } catch (error) {
+      setNotificationError(error instanceof Error ? error.message : 'Could not update notifications.')
+    }
   }
 
   const periods = ['Q2 FY 2026–27', 'Q1 FY 2026–27', 'Q4 FY 2025–26', 'Q3 FY 2025–26']
-
-  const filteredSearchResults = searchQuery.trim()
-    ? searchCatalog.filter(item =>
-        item.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        item.sector.toLowerCase().includes(searchQuery.toLowerCase())
-      ).slice(0, 8)
-    : searchCatalog.slice(0, 6)
 
   // Map sub-pages to their active parent nav item
   const getActiveNavId = () => {
@@ -239,6 +250,21 @@ export default function Shell({ children }: { children: React.ReactNode }) {
             )
           })}
         </nav>
+        {user?.role === 'Super Admin' && (
+          <div className="border-t border-slate-200 p-2.5">
+            <button
+              onClick={() => navigate('settings')}
+              className={`w-full flex items-center gap-3 rounded-lg px-3 py-2 text-left transition-colors ${
+                currentPage === 'settings'
+                  ? 'bg-indigo-50 text-indigo-700 font-medium'
+                  : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+              }`}
+            >
+              <SettingsIcon className="h-4 w-4" />
+              <span className="text-[12.5px]">Settings & users</span>
+            </button>
+          </div>
+        )}
       </aside>
 
       {/* Main Workspace Area */}
@@ -267,9 +293,12 @@ export default function Shell({ children }: { children: React.ReactNode }) {
               <div className="absolute top-full left-0 right-0 mt-1.5 bg-white border border-slate-200 rounded-lg shadow-lg p-2 z-50 space-y-1 max-h-80 overflow-y-auto">
                 <div className="text-[10px] font-mono text-slate-500 px-2 py-1 uppercase tracking-wider flex items-center justify-between">
                   <span>Direct Supervisory Catalog</span>
-                  <span>{filteredSearchResults.length} matches</span>
+                  <span>{searchResults.length} matches</span>
                 </div>
-                {filteredSearchResults.map((item, idx) => (
+                {searchError && <p className="px-2 py-2 text-xs text-rose-600">{searchError}</p>}
+                {searchQuery.trim().length < 2 && <p className="px-2 py-2 text-xs text-slate-500">Enter at least two characters to search current assessment records.</p>}
+                {!searchError && searchQuery.trim().length >= 2 && searchResults.length === 0 && <p className="px-2 py-2 text-xs text-slate-500">No matching records.</p>}
+                {searchResults.map((item, idx) => (
                   <button
                     key={idx}
                     onClick={() => handleSearchResultClick(item)}
@@ -356,6 +385,8 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                   </div>
 
                   <div className="space-y-1.5 max-h-64 overflow-y-auto">
+                    {notificationError && <p role="alert" className="p-2 text-xs text-rose-600">{notificationError}</p>}
+                    {!notificationError && notifications.length === 0 && <p className="p-2 text-xs text-slate-500">No notifications are available.</p>}
                     {notifications.map(n => (
                       <div
                         key={n.id}
@@ -364,12 +395,6 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                         }`}
                         onClick={() => {
                           setShowNotifications(false)
-                          if (n.detail.includes('CSE-014')) {
-                            setSelectedEntity('CSE-014')
-                            setCurrentPage('entity')
-                          } else {
-                            setCurrentPage('gaps')
-                          }
                         }}
                       >
                         <div className="flex items-center justify-between gap-1 mb-1">
@@ -394,6 +419,18 @@ export default function Shell({ children }: { children: React.ReactNode }) {
               <span className="w-2 h-2 rounded-full bg-indigo-500" />
               <span>{timeString}</span>
             </div>
+            <div className="hidden md:block text-right">
+              <div className="text-xs font-semibold text-slate-800">{user?.displayName}</div>
+              <div className="text-[10px] text-slate-500">{user?.role}</div>
+            </div>
+            <button
+              onClick={() => { void logout() }}
+              className="btn btn-sm"
+              title="Sign out"
+              aria-label="Sign out"
+            >
+              <LogOut className="h-3.5 w-3.5" /> Sign out
+            </button>
           </div>
         </header>
 

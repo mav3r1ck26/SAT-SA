@@ -7,13 +7,13 @@ import { Case } from './models/Case'
 import { TelemetryCoverage } from './models/TelemetryCoverage'
 import { Finding } from './models/Finding'
 import { EvidenceEvent } from './models/EvidenceEvent'
-import { AuditLog } from './models/AuditLog'
 import { Notification } from './models/Notification'
 import { Report } from './models/Report'
 import { IngestionBatch } from './models/IngestionBatch'
 import { Configuration } from './models/Configuration'
 import { linkFindingsToSampleEvidence } from './services/sampleEvidence'
 import { seedSampleReviewFindings } from './services/sampleReviewData'
+import { initializeReportDefinitions } from './services/reportDefinitions'
 
 type Criticality = 'Critical' | 'High' | 'Medium' | 'Low'
 type Priority = 'Critical' | 'High' | 'Moderate' | 'Normal' | 'Low'
@@ -90,12 +90,15 @@ function daysAgoDate(days: number, hourOffset = 0) {
 }
 
 async function seed() {
+  if (process.env.NODE_ENV === 'production' || process.env.SATSA_ALLOW_SAMPLE_DATA !== 'true') {
+    throw new Error('Sample seeding is disabled. Set SATSA_ALLOW_SAMPLE_DATA=true in a non-production environment to continue.')
+  }
   await connectDB()
   console.log('Dropping existing collections...')
   await Promise.all([
     Entity.deleteMany({}), EntityMetric.deleteMany({}), Alert.deleteMany({}),
     Case.deleteMany({}), TelemetryCoverage.deleteMany({}), Finding.deleteMany({}),
-    EvidenceEvent.deleteMany({}), AuditLog.deleteMany({}), Notification.deleteMany({}),
+    EvidenceEvent.deleteMany({}), Notification.deleteMany({}),
     Report.deleteMany({}), IngestionBatch.deleteMany({}), Configuration.deleteMany({})
   ])
 
@@ -108,6 +111,7 @@ async function seed() {
     await Entity.create({
       id: e.id, name: e.name, sector: e.sector, region: e.region, criticality: e.criticality,
       dataCompleteness: e.dataCompleteness, telemetryCoverage: e.telemetryCoverage,
+      assessmentPeriod: 'Q2 FY 2026-27', dataProvenance: 'sample',
       lastSubmission: daysAgoDate(rand(1, 4)).toISOString(),
       assessmentStatus: e.metrics.priority === 'Critical' || e.metrics.priority === 'High' ? 'Review Required' : e.metrics.priority === 'Moderate' ? 'Monitor' : 'Compliant'
     })
@@ -196,6 +200,7 @@ async function seed() {
           evidenceCount: evidence,
           isTemplateReuse: isTemplate, reopenedCount: reopened,
           closureReason: (Math.random() < 0.5 ? 'False positive' : 'Resolved') as CaseClosureReason,
+          period: 'Q2 FY 2026-27', dataProvenance: 'sample',
           investigator: investigators[rand(0, investigators.length - 1)],
           behaviour, status: 'closed' as CaseStatus,
           rootCauseIdentified: Math.random() < 0.7,
@@ -215,6 +220,7 @@ async function seed() {
         for (const [evt, actor, role, time] of steps) {
           await EvidenceEvent.create({
             entityId: e.id,
+            period: 'Q2 FY 2026-27',
             caseId, alertId, eventTime: time, actor, role, event: evt, eventType: evt as any,
             metadata: [`Severity: ${severity}`, `Asset: ${asset}`, `Category: ${category}`]
           })
@@ -227,7 +233,7 @@ async function seed() {
         escalationPath, escalationDelayMin, escalationRequired, escalated, alertToCase,
         closureNote: Math.random() < 0.5 ? 'False positive' : 'Resolved',
         meanAckMin: 4.2, meanInvestigationMin: 42.6, meanClosureMin: 58.3,
-        period: 'Q2 FY 2026-27'
+        period: 'Q2 FY 2026-27', dataProvenance: 'sample'
       } as any)
     }
   }
@@ -245,7 +251,7 @@ async function seed() {
     findingCounter.n++
     await Finding.create({
       id: `EG-${findingCounter.n}`, findingType: g.type, title: g.title, entityId: g.entityId, controlArea: g.controlArea,
-      severity: g.severity, confidence: g.confidence, evidenceCount: g.evidenceCount, status: 'In Review' as FindingStatus, description: g.description, whyItMatters: g.description,
+      severity: g.severity, confidence: g.confidence, evidenceCount: g.evidenceCount,       period: 'Q2 FY 2026-27', dataProvenance: 'sample', status: 'In Review' as FindingStatus, description: g.description, whyItMatters: g.description,
       methodology: 'Comparison of operational evidence against documented capability baselines and peer medians.',
       limitations: 'Indicators may have legitimate non-risk explanations. Requires examiner confirmation.',
       peerComparison: g.peer, recommendation: 'Manual examination of investigation records recommended.'
@@ -258,7 +264,7 @@ async function seed() {
       findingCounter.n++
       await Finding.create({
         id: `NS-${findingCounter.n}`, findingType: 'NEGATIVE_SPACE' as FindingType, title: 'Missing Telemetry',
-        entityId: e.id, controlArea: 'Telemetry', severity: 'High' as FindingSeverity, confidence: 86, evidenceCount: 6, status: 'New' as FindingStatus,
+        entityId: e.id, period: 'Q2 FY 2026-27', dataProvenance: 'sample', controlArea: 'Telemetry', severity: 'High' as FindingSeverity, confidence: 86, evidenceCount: 6, status: 'New' as FindingStatus,
         description: 'Expected telemetry streams absent or incomplete from critical asset groups.',
         whyItMatters: 'Critical asset groups are under-monitored, limiting detection and investigation capability.',
         methodology: 'Expected vs observed telemetry compared across infrastructure categories. Coverage <50% flagged.',
@@ -284,25 +290,7 @@ async function seed() {
   await Notification.insertMany(notifDefs.map((n, i) => ({ ...n, read: i >= 3, time: daysAgoDate(0, -i) })))
 
   // ---- Reports ----
-  const reportDefs = [
-    { id: 'RPT-01', name: 'Entity Assessment Report', desc: 'Comprehensive supervisory assessment for a single entity.', format: 'PDF, CSV, JSON' },
-    { id: 'RPT-02', name: 'Cross-Entity Supervisory Report', desc: 'Consolidated supervisory findings across all assessed CSEs.', format: 'PDF, CSV' },
-    { id: 'RPT-03', name: 'Execution Gap Report', desc: 'All execution gap indicators with evidence and confidence.', format: 'PDF, CSV, JSON' },
-    { id: 'RPT-04', name: 'Negative Space Report', desc: 'Telemetry coverage matrix and monitoring blind spots.', format: 'PDF, CSV' },
-    { id: 'RPT-05', name: 'Peer Benchmark Report', desc: 'Peer percentile comparison for key operational metrics.', format: 'PDF, CSV, JSON' },
-    { id: 'RPT-06', name: 'Manual Review Summary', desc: 'Summary of manual review queue actions and dispositions.', format: 'PDF' }
-  ]
-  await Report.insertMany(reportDefs.map(r => ({ ...r, status: 'Ready' })))
-
-  // ---- Audit log ----
-  await AuditLog.insertMany([
-    { timestamp: new Date(), user: 'Examiner-07', action: 'Finding Reviewed', findingId: 'EG-182', entityId: 'CSE-014', status: 'Confirmed' },
-    { timestamp: new Date(Date.now() - 20 * 60000), user: 'Examiner-03', action: 'Recommendation Assigned', findingId: 'RP-001', entityId: 'CSE-014', status: 'Assigned' },
-    { timestamp: new Date(Date.now() - 40 * 60000), user: 'Supervisor-02', action: 'Adding Examiner Note', findingId: 'EG-182', entityId: 'CSE-014', status: 'In Progress' },
-    { timestamp: new Date(Date.now() - 60 * 60000), user: 'Auto-Ingest', action: 'Data Ingested', entityId: 'CSE-014', status: 'Complete' },
-    { timestamp: new Date(Date.now() - 120 * 60000), user: 'Examiner-05', action: 'Recommendation Reviewed', findingId: 'RP-003', entityId: 'CSE-027', status: 'Submitted' },
-    { timestamp: new Date(Date.now() - 180 * 60000), user: 'Examiner-09', action: 'Finding Reviewed', findingId: 'NS-004', entityId: 'CSE-063', status: 'Confirmed' }
-  ])
+  await initializeReportDefinitions()
 
   console.log('=== SEED COMPLETE ===')
   console.log(`Entities: ${await Entity.countDocuments()}`)

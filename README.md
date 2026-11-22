@@ -61,8 +61,8 @@ Period-specific assessments are stored per entity and reporting period. The Enti
 | **API Backend** | Node.js 20+, Express 5, TypeScript, Mongoose 9 |
 | **Database** | MongoDB 7 (Docker) |
 | **Analytics/ML** | Python 3.11+, FastAPI, pandas, NumPy, scikit-learn, joblib |
-| **ML Models** | Random Forest Regressor, Gradient Boosting Regressor (ensemble) |
-| **Auth** | JWT, bcrypt, Role-Based Access Control |
+| **ML Models** | Random Forest and Gradient Boosting regressors (advisory ensemble) |
+| **Auth** | Expiring opaque sessions in HttpOnly cookies, scrypt password hashes, server-enforced RBAC |
 
 ---
 
@@ -96,14 +96,15 @@ docker-compose up -d
 
 ### 3. Seed Database
 ```bash
-# Node/Express seed (operational data)
+# Optional sample data; disabled unless SATSA_ALLOW_SAMPLE_DATA=true is set
+# in the environment, and always disabled in production.
 npm run seed
 
-# Python ML seed (training data + models)
-cd ml-backend
-python -m src.main --mode train --model-type ensemble --n-entities 200 --periods-per-entity 8
-cd ..
+# Do not train or replace a supervisory model with synthetic or unverified submissions.
+# Provision a model only through an approved, validated training process.
 ```
+
+The Node API initializes the built-in report definitions idempotently on startup. Report templates do not require the optional sample-data seed.
 
 ### 4. Start Development Servers
 ```bash
@@ -119,6 +120,22 @@ python -m src.api
 - **Frontend**: http://localhost:5173
 - **Node API**: http://localhost:3500/api/health
 - **ML API**: http://localhost:8000/health
+
+The Node API requires the first Super Admin to be bootstrapped with `SATSA_BOOTSTRAP_TOKEN`.
+Set this token in the service environment before setup; never place it in source control or expose
+it in logs. Provide dependencies and model artifacts from an approved offline package source for
+air-gapped deployments.
+
+After initial setup, users can request access from the sign-in page. Requests receive an inactive
+Auditor account and cannot sign in until a Super Admin approves them under **Settings & users**.
+The Super Admin can approve or reject pending requests; registration never grants an active account
+or an administrative role.
+
+### API rate limits
+
+The Node API uses separate per-client limits for authentication, ingestion, analytics reads and analytics recomputation. Defaults are 10 login attempts per 15 minutes, 5 setup attempts per hour, 5 access requests per hour, 60 other authentication requests per 15 minutes, 60 ingestion requests per 15 minutes, 300 analytics requests per 15 minutes, 10 analytics recomputations per 15 minutes and 600 other API requests per 15 minutes. Override these defaults with positive integer environment variables: `SATSA_RATE_LIMIT_AUTH_LOGIN`, `SATSA_RATE_LIMIT_AUTH_SETUP`, `SATSA_RATE_LIMIT_AUTH_REGISTER`, `SATSA_RATE_LIMIT_AUTH`, `SATSA_RATE_LIMIT_INGESTION`, `SATSA_RATE_LIMIT_ANALYTICS`, `SATSA_RATE_LIMIT_ANALYTICS_WRITE` and `SATSA_RATE_LIMIT_API_READ`.
+
+Rate-limit counters currently reside in each Node process's memory. This is appropriate for a single API instance, but limits are not shared across instances and reset when a process restarts. Multi-instance deployments should replace the in-memory counter map with a shared atomic store (for example Redis using an approved, internally hosted deployment) before scaling out; no external service is required or enabled by this application by default.
 
 ---
 
@@ -237,12 +254,11 @@ Layer 4: Machine Learning      → Random Forest + K-Means + Ensemble
 - Deviation classification: *Significantly Above/Below*, *Above/Below*, *In Range*
 - Context-aware (doesn't penalize high volume alone)
 
-### 5. Confidence Framework
-```
-Confidence = Σ(weight_i × factor_i)
-Factors: Data Completeness (20%), Evidence Count (20%), Signal Consistency (20%),
-         Model Confidence (15%), Peer Sample Size (10%), Historical Consistency (10%), Rule Reliability (5%)
-```
+### 5. Advisory ML and feature coverage
+ML predictions are advisory and are not supervisory findings. Evaluation requires the complete
+configured feature set; incomplete inputs return all six target keys with unavailable scores and
+an explicit missing-feature/coverage status. Prediction confidence is currently reported as
+unavailable (`null`); tree spread is not represented as calibrated confidence.
 
 ### 6. Review Prioritisation Engine
 ```
@@ -260,9 +276,9 @@ Components: Severity (25%), Confidence (20%), Risk Contribution (20%),
 |--------|-------------|
 | `Entity_ID` | CSE identifier |
 | `Period` | Assessment period |
-| `*_Score` | 0-1 normalized score per metric |
+| `*_Score` | Predicted value in that target's documented unit and scale |
 | `*_Rating` | Excellent/Good/Needs Improvement/Critical |
-| `*_Confidence` | ML confidence with qualitative label |
+| `*_Confidence` | Unavailable unless a verified confidence estimate exists |
 | `*_Interpretation` | Human-readable explanation |
 | `Rule_Findings_*` | Count of rule-based findings by severity |
 | `Top_Finding` | Highest-severity rule finding |
@@ -319,18 +335,30 @@ All thresholds and weights externalized in MongoDB `Configuration` collection:
 ### Offline/Air-Gapped Requirements
 - No external AI APIs (OpenAI, Gemini, Claude, etc.)
 - No cloud ML APIs or SaaS analytics
-- No Internet dependency
-- All models served locally from `/ml_models/`
-- No telemetry transmission outside environment
+- Services use local endpoints by default; no submission data is sent to external APIs.
+- Offline dependency installation and approved local model provisioning must be arranged before deployment.
+- The ML API binds to loopback by default; restrict network exposure when changing the bind address.
 
 ### RBAC Roles
 | Role | Permissions |
 |------|-------------|
-| **Administrator** | Full access: users, config, models, all data |
-| **Supervisor** | Analytics, reports, findings review, entity management |
-| **Examiner** | Findings review, evidence exploration, audit trail |
-| **Auditor** | Read-only: audit log, reports, validation metrics |
-| **Viewer** | Read-only: dashboards, entity overview |
+| **Super Admin** | User and configuration administration, model training controls, full access |
+| **Supervisor** | Supervisory analytics, reports, findings review, entity operations |
+| **Examiner** | Assessment review, findings, evidence and reports |
+| **Auditor** | Read-only audit and review surfaces |
+| **SOC Manager** | Read-only access scoped to assigned entities |
+
+Authentication uses opaque random session tokens stored as hashes in MongoDB. The browser receives
+an expiring `HttpOnly`, `SameSite=Strict` cookie; password hashes use Node's `scrypt`. API identity
+and role are derived from the session, not request-body fields. The audit hash chain detects
+tampering against its stored head, but does not provide absolute immutability; protect MongoDB
+credentials, restrict database permissions, and retain independent protected checkpoints.
+
+Upload limits default to 50 MB, 10,000 records, 100 fields, 10,000 characters per field, and 365
+days of source-record retention. They can be bounded with `UPLOAD_MAX_SIZE_MB`,
+`INGESTION_MAX_RECORDS`, `INGESTION_MAX_FIELDS`, `INGESTION_MAX_FIELD_LENGTH`, and
+`SOURCE_RECORD_RETENTION_DAYS`. Restrict access to MongoDB and the upload directory independently
+of application RBAC.
 
 ### Docker Development
 The checked-in Compose file starts MongoDB. Run `docker compose up -d mongodb`, then start the Node API, frontend, and Python ML API with `npm run dev:full`.
@@ -410,12 +438,12 @@ npm run preview      # Preview the primary frontend build
 npm run api          # Start Express server
 npm run api:watch    # Start with tsx watch (auto-reload)
 npm run dev:full     # Start the Node API, primary frontend, and ML inference API together
-npm run seed         # Seed MongoDB with synthetic data
+npm test             # Run focused security, audit, ingestion, config, and export tests
+npm run seed         # Seed explicitly enabled sample data (non-production only)
 npm run seed:evidence # Link sample findings to their evidence records (safe to rerun)
 
 # Python ML
 cd ml-backend
-python -m src.main --mode train --model-type ensemble --n-entities 200 --periods-per-entity 8
 python -m src.main --mode infer --model-dir models --output-dir output
 python -m src.api                                 # Start FastAPI server
 ```

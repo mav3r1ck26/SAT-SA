@@ -1,7 +1,10 @@
 import { Router, Response, Request } from 'express'
 import http from 'http'
 import { Entity } from '../models/Entity'
-import { EntityMetric } from '../models/EntityMetric'
+import { Alert } from '../models/Alert'
+import { Case } from '../models/Case'
+import { TelemetryCoverage } from '../models/TelemetryCoverage'
+import { resolveAssessmentPeriod } from '../services/configuration'
 
 const ML_API_URL = process.env.ML_API_URL || 'http://127.0.0.1:8000'
 
@@ -47,8 +50,8 @@ function proxyRequest(req: Request, res: Response, endpoint: string) {
   })
 
   proxyReq.on('error', (err) => {
-    console.error('ML proxy error:', err)
-    res.status(503).json({ success: false, error: { code: 'ML_SERVICE_UNAVAILABLE', message: err.message } })
+    console.error('ML proxy request failed:', err.name)
+    res.status(503).json({ success: false, error: { code: 'ML_SERVICE_UNAVAILABLE', message: 'The ML service is unavailable.' } })
   })
 
   if (payload) {
@@ -84,66 +87,55 @@ router.post('/evaluate', async (req, res) => {
 // Fleet-wide ML evaluation using live entity data from MongoDB
 router.post('/evaluate-fleet', async (req, res) => {
   try {
-    const entities = await Entity.find().sort({ id: 1 }).lean()
-    const metrics = await EntityMetric.find({ period: 'Q2 FY 2026-27' }).lean()
-    const metricMap = new Map(metrics.map(m => [m.entityId, m]))
-
-    const batchEntities = entities.map(e => {
-      const m = metricMap.get(e.id)
-      const risk = m?.riskScore ?? 50
-      return {
-        entity_id: e.id,
-        period: 'Q2 FY 2026-27',
-        features: {
-          total_alerts_per_period: Math.round(800 + risk * 15),
-          alerts_per_analyst_per_shift: Math.round(30 + risk * 0.4),
-          cases_per_analyst_per_shift: Math.round(6 + (100 - risk) * 0.08),
-          alert_to_case_ratio: +(0.10 + (risk / 500)).toFixed(2),
-          mean_acknowledgment_time_min: +(3.0 + (risk / 30)).toFixed(1),
-          mean_investigation_time_min: +(20.0 + (m?.investigation ?? 50) * 0.5).toFixed(1),
-          mean_closure_time_min: +(25.0 + (m?.investigation ?? 50) * 0.6).toFixed(1),
-          pct_cases_closed_under_1hr: +(0.70 + (risk / 400)).toFixed(2),
-          pct_cases_closed_under_4hr: 0.92,
-          pct_cases_closed_under_24hr: 0.98,
-          false_positive_rate_current: +(0.60 + (risk / 300)).toFixed(2),
-          true_positive_rate_current: +(0.40 - (risk / 400)).toFixed(2),
-          escalation_rate: +(0.08 + (m?.escalation ?? 50) / 600).toFixed(2),
-          reopened_case_rate: 0.03,
-          evidence_per_case_avg: +(2.0 + (m?.investigation ?? 50) / 30).toFixed(1),
-          cases_with_zero_evidence_pct: +(0.02 + (risk / 500)).toFixed(2),
-          cases_with_insufficient_iocs_pct: 0.06,
-          classification_changes_per_case: 0.09,
-          analyst_count: 10,
-          workload_balance_index: 0.82,
-          template_reuse_rate: +(0.10 + (risk / 400)).toFixed(2),
-          superficial_investigation_rate: +(0.05 + (risk / 500)).toFixed(2),
-          unusually_fast_closure_rate: +(0.06 + (risk / 400)).toFixed(2),
-          critical_escalation_rate: +(0.80 + (m?.escalation ?? 50) / 400).toFixed(2),
-          escalation_delay_avg_min: +(25.0 + risk * 0.3).toFixed(1),
-          playbook_execution_rate: 0.91,
-          playbook_coverage_ratio: 0.86,
-          playbook_adherence_rate: 0.89,
-          signature_age_avg_days: 42,
-          signature_age_max_days: 110,
-          rules_updated_last_30d: 15,
-          rules_updated_last_90d: 40,
-          detection_coverage_ratio: +((m?.threatDetection ?? 70) / 100).toFixed(2),
-          threat_intel_feeds_active: 5,
-          ioc_enrichment_rate: 0.93,
-          context_enrichment_rate: 0.87,
-          telemetry_coverage_pct: e.telemetryCoverage || 82,
-          log_source_count: 22,
-          critical_asset_coverage_pct: 0.90,
-          senior_analyst_ratio: 0.30,
-          certifications_per_analyst: 1.7,
-          training_hours_per_analyst_qtr: 20,
-          prev_period_fpr: 0.72,
-          prev_period_efficiency: +((100 - risk) / 100).toFixed(2),
-          trend_fpr_3m: -0.01,
-          trend_efficiency_3m: 0.02
-        }
+    const period = await resolveAssessmentPeriod(req.body.period)
+    const entityFilter = typeof req.body.entityId === 'string' ? { id: req.body.entityId } : {}
+    const entities = await Entity.find(entityFilter).sort({ id: 1 }).lean()
+    if (entityFilter.id && !entities.length) return res.status(404).json({ success: false, error: { code: 'ENTITY_NOT_FOUND', message: 'Entity not found.' } })
+    const batchEntities = await Promise.all(entities.map(async entity => {
+      const [alerts, cases, coverage] = await Promise.all([
+        Alert.find({ entityId: entity.id, period }).lean(),
+        Case.find({ entityId: entity.id, period }).lean(),
+        TelemetryCoverage.find({ entityId: entity.id, period }).lean()
+      ])
+      const features: Record<string, number> = {}
+      const average = (values: Array<number | null | undefined>) => {
+        const valid = values.filter((value): value is number => typeof value === 'number' && Number.isFinite(value))
+        return valid.length ? valid.reduce((sum, value) => sum + value, 0) / valid.length : null
       }
-    })
+
+      if (alerts.length) {
+        features.total_alerts_per_period = alerts.length
+        const linkedAlerts = new Set(cases.map(item => item.alertId).filter((value): value is string => Boolean(value)))
+        features.alert_to_case_ratio = linkedAlerts.size / alerts.length
+        features.escalation_rate = alerts.filter(item => Boolean(item.escalationPath)).length / alerts.length
+        const dispositions = alerts.filter(item => Boolean(item.disposition))
+        if (dispositions.length) {
+          features.false_positive_rate_current = dispositions.filter(item => item.disposition === 'False Positive').length / dispositions.length
+        }
+        const acknowledgement = average(alerts.map(item => item.acknowledgementTimeMin))
+        const investigationTime = average(alerts.map(item => item.investigationTimeMin))
+        const closureTime = average(alerts.map(item => item.closureTimeMin))
+        if (acknowledgement != null) features.mean_acknowledgment_time_min = acknowledgement
+        if (investigationTime != null) features.mean_investigation_time_min = investigationTime
+        if (closureTime != null) features.mean_closure_time_min = closureTime
+      }
+      if (cases.length) {
+        const knownEvidence = cases.map(item => item.evidenceCount ?? item.evidenceAttachments).filter((value): value is number => typeof value === 'number' && Number.isFinite(value))
+        if (knownEvidence.length) {
+          features.evidence_per_case_avg = average(knownEvidence)!
+          features.cases_with_zero_evidence_pct = knownEvidence.filter(value => value === 0).length / knownEvidence.length
+        }
+        const knownReopened = cases.filter(item => Number.isFinite(item.reopenedCount))
+        if (knownReopened.length) features.reopened_case_rate = knownReopened.filter(item => item.reopenedCount > 0).length / knownReopened.length
+        const knownTemplate = cases.filter(item => typeof item.isTemplateReuse === 'number')
+        if (knownTemplate.length) features.template_reuse_rate = knownTemplate.filter(item => item.isTemplateReuse === 1).length / knownTemplate.length
+      }
+      const coverageValues = coverage.map(item => item.observedCoverage ?? item.observed)
+      const telemetryCoverage = average(coverageValues)
+      if (telemetryCoverage != null) features.telemetry_coverage_pct = telemetryCoverage
+
+      return { entity_id: entity.id, period, features }
+    }))
 
     const payload = JSON.stringify({ entities: batchEntities })
     const { hostname, port } = parseUrl(ML_API_URL)
@@ -165,12 +157,14 @@ router.post('/evaluate-fleet', async (req, res) => {
       mlRes.on('end', () => {
         try {
           const evalResults = JSON.parse(data)
+          if ((mlRes.statusCode || 200) >= 400) {
+            return res.status(mlRes.statusCode || 502).json({ success: false, error: { code: 'ML_EVALUATION_FAILED', message: 'ML evaluation request failed.' }, data: evalResults })
+          }
           res.json({
             success: true,
             data: {
+              period,
               fleetEvaluated: batchEntities.length,
-              modelStatus: 'trained',
-              modelType: 'ensemble',
               timestamp: new Date().toISOString(),
               results: evalResults
             }
@@ -182,13 +176,15 @@ router.post('/evaluate-fleet', async (req, res) => {
     })
 
     mlReq.on('error', err => {
-      res.status(503).json({ success: false, error: { code: 'ML_UNAVAILABLE', message: err.message } })
+      console.error('Fleet ML evaluation request failed:', err instanceof Error ? err.name : 'Unknown error')
+      res.status(503).json({ success: false, error: { code: 'ML_UNAVAILABLE', message: 'The ML service is unavailable.' } })
     })
 
     mlReq.write(payload)
     mlReq.end()
   } catch (err: any) {
-    res.status(500).json({ success: false, error: { code: 'INTERNAL_ERROR', message: err.message } })
+    console.error('Fleet ML evaluation failed:', err instanceof Error ? err.name : 'Unknown error')
+    res.status(500).json({ success: false, error: { code: 'INTERNAL_ERROR', message: 'The ML evaluation request could not be completed.' } })
   }
 })
 

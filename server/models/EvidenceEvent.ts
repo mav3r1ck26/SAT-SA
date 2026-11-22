@@ -2,6 +2,7 @@ import { Schema, model, InferSchemaType } from 'mongoose'
 
 export const evidenceEventSchema = new Schema({
   entityId: { type: String, ref: 'Entity', required: true },
+  period: { type: String, required: true },
   findingId: { type: String, ref: 'Finding' },
   caseId: { type: String, ref: 'Case' },
   alertId: { type: String, ref: 'Alert' },

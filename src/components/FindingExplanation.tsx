@@ -9,17 +9,17 @@ import { reviewFinding } from '../api/client'
 import { downloadJSON } from '../utils/export'
 
 interface EvidenceStats {
-  cases: number
-  criticalAlerts: number
-  escalationRecords: number
+  cases?: number | null
+  criticalAlerts?: number | null
+  escalationRecords?: number | null
 }
 
 interface ExplanationProps {
   id?: string
   entityId?: string
   finding: string
-  severity: 'Critical' | 'High' | 'Medium' | 'Low'
-  confidence: number
+  severity?: string
+  confidence?: number | null
   whyMatters: string
   evidence: EvidenceStats
   peerComparison: string
@@ -45,7 +45,7 @@ export default function FindingExplanation({
   detectionLogic, 
   limitations, 
   compact,
-  mitre = 'T1059',
+  mitre,
   status: initialStatus = 'In Review',
   examinerNote: initialNote = '',
   reviewedBy: initialReviewer = '',
@@ -66,7 +66,6 @@ export default function FindingExplanation({
     try {
       await reviewFinding(id, {
         status: newStatus,
-        reviewer: 'Lead Supervisory Examiner (NCIIPC)',
         note: noteToSave !== undefined ? noteToSave : examinerNote
       })
       setCurrentStatus(newStatus)
@@ -85,7 +84,6 @@ export default function FindingExplanation({
     try {
       await reviewFinding(id, {
         status: currentStatus,
-        reviewer: 'Lead Supervisory Examiner (NCIIPC)',
         note: noteInput
       })
       setExaminerNote(noteInput)
@@ -114,7 +112,7 @@ export default function FindingExplanation({
       detectionLogic,
       limitations,
       examinerNote,
-      reviewedBy: initialReviewer || 'Lead Supervisory Examiner',
+      reviewedBy: initialReviewer || 'Not reported',
       exportedAt: new Date().toISOString()
     }
     downloadJSON(filename, dossierData)
@@ -150,11 +148,11 @@ export default function FindingExplanation({
             </div>
           </div>
           <div className="flex items-center gap-3">
-            <MitreBadge techniqueId={mitre} name={mitre} />
-            <SeverityBadge severity={severity} />
+            {mitre && <MitreBadge techniqueId={mitre} name={mitre} />}
+            {severity && <SeverityBadge severity={severity} />}
             <div className="bg-white px-3 py-1 rounded border border-slate-200 text-right">
               <div className="text-[9.5px] uppercase font-mono text-slate-500">Confidence</div>
-              <span className="font-mono text-sm font-bold text-indigo-600">{confidence}%</span>
+              <span className="font-mono text-sm font-bold text-indigo-600">{confidence == null ? 'Not reported' : `${confidence}%`}</span>
             </div>
           </div>
         </div>
@@ -179,17 +177,17 @@ export default function FindingExplanation({
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
           <div className="bg-slate-50 rounded-md p-3 border border-slate-200">
             <div className="label mb-1 text-slate-500">Associated Cases</div>
-            <div className="font-mono text-lg font-bold text-slate-800">{evidence.cases}</div>
+            <div className="font-mono text-lg font-bold text-slate-800">{evidence.cases ?? 'Not reported'}</div>
             <div className="text-[10px] text-slate-400 font-mono">SOC Ingested</div>
           </div>
           <div className="bg-slate-50 rounded-md p-3 border border-slate-200">
             <div className="label mb-1 text-slate-500">Critical Alerts</div>
-            <div className="font-mono text-lg font-bold text-amber-600">{evidence.criticalAlerts}</div>
+            <div className="font-mono text-lg font-bold text-amber-600">{evidence.criticalAlerts ?? 'Not reported'}</div>
             <div className="text-[10px] text-slate-400 font-mono">Raw telemetry</div>
           </div>
           <div className="bg-slate-50 rounded-md p-3 border border-rose-200 bg-rose-50">
             <div className="label mb-1 text-rose-600 font-semibold">Escalation Gaps</div>
-            <div className="font-mono text-lg font-bold text-rose-600">{evidence.escalationRecords}</div>
+            <div className="font-mono text-lg font-bold text-rose-600">{evidence.escalationRecords ?? 'Not reported'}</div>
             <div className="text-[10px] text-rose-600 font-mono">Missing actions</div>
           </div>
           <div className="bg-slate-50 rounded-md p-3 border border-indigo-200 bg-indigo-50">

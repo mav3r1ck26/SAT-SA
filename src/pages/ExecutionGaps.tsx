@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState } from 'react'
 import StatCard from '../components/StatCard'
 import FindingExplanation from '../components/FindingExplanation'
 import { SeverityBadge, Confidence, MitreBadge, TelemetryPulse } from '../components/ui'
@@ -8,21 +8,23 @@ import {
   ChevronDown, ChevronUp, Search, RefreshCw, FileText
 } from 'lucide-react'
 import { downloadCSV, downloadJSON } from '../utils/export'
+import { useApp } from '../context/AppContext'
+import { useEntityScope } from '../hooks/useEntityScope'
+import { useApiResource } from '../hooks/useApiResource'
+import RequestState from '../components/RequestState'
 
 export default function ExecutionGaps() {
+  const { assessmentPeriod } = useApp()
+  const entityId = useEntityScope()
+  const params = { period: assessmentPeriod, ...(entityId ? { entityId } : {}) }
+  const resource = useApiResource(`findings:${assessmentPeriod}:${entityId || 'ALL'}`, signal => fetchFindings(params, signal))
   const [selected, setSelected] = useState<string | null>(null)
-  const [findings, setFindings] = useState<any[]>([])
+  const findings = resource.data || []
   const [filterSeverity, setFilterSeverity] = useState('')
   const [filterStatus, setFilterStatus] = useState('')
   const [search, setSearch] = useState('')
 
-  const loadFindings = () => {
-    fetchFindings().then(setFindings).catch(() => setFindings([]))
-  }
-
-  useEffect(() => {
-    loadFindings()
-  }, [])
+  const loadFindings = resource.retry
 
   const filtered = findings.filter(f => {
     if (filterSeverity && f.severity !== filterSeverity) return false
@@ -51,12 +53,12 @@ export default function ExecutionGaps() {
     ]
     const rows = filtered.map(f => [
       f.id,
-      f.title || f.finding || 'Behavioral divergence',
+      f.title || f.finding || '',
       f.entityId,
-      f.mitreTechnique || 'T1059',
-      f.controlArea || 'Security Operations',
-      f.evidenceCount ?? 0,
-      f.confidence ?? 0,
+      f.mitreTechnique || '',
+      f.controlArea || '',
+      f.evidenceCount ?? '',
+      f.confidence ?? '',
       f.severity,
       f.status || 'New',
       f.reviewedBy || 'Unassigned'
@@ -66,6 +68,10 @@ export default function ExecutionGaps() {
 
   const handleExportJSON = () => {
     downloadJSON(`SAT-SA_Execution_Gaps_${new Date().toISOString().slice(0, 10)}`, filtered)
+  }
+
+  if (resource.loading || resource.error || !resource.data) {
+    return <RequestState loading={resource.loading} error={resource.error} retry={resource.retry} retryInSeconds={resource.retryInSeconds} loadingMessage="Loading execution gap findings…" />
   }
 
   return (
@@ -107,10 +113,10 @@ export default function ExecutionGaps() {
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
-        <StatCard label="Identified Execution Gaps" value={String(findings.length)} trend={3} icon="gap" accent="neutral" />
-        <StatCard label="High Confidence (≥90%)" value={String(highConfidence)} trend={1} icon="shield" accent="info" />
-        <StatCard label="Critical Severity Gaps" value={String(criticalFindings)} trend={0} icon="alert" accent="danger" />
-        <StatCard label="Entities Impacted" value={String(entitiesAffected)} trend={0} icon="building" accent="warning" />
+        <StatCard label="Identified Execution Gaps" value={String(findings.length)} icon="gap" accent="neutral" />
+        <StatCard label="High Confidence (≥90%)" value={String(highConfidence)} icon="shield" accent="info" />
+        <StatCard label="Critical Severity Gaps" value={String(criticalFindings)} icon="alert" accent="danger" />
+        <StatCard label="Entities Impacted" value={String(entitiesAffected)} icon="building" accent="warning" />
       </div>
 
       <div className="card overflow-hidden">
@@ -187,16 +193,18 @@ export default function ExecutionGaps() {
                 >
                   <td className="mono-id text-indigo-600 font-bold">{f.id}</td>
                   <td className="text-xs font-semibold text-slate-800 max-w-[320px]">
-                    <div className="truncate">{f.title || f.finding || 'Behavioral divergence detected'}</div>
+                    <div className="truncate">{f.title || f.finding || 'Finding details not reported'}</div>
                   </td>
                   <td className="mono-id text-slate-600">{f.entityId}</td>
                   <td>
-                    <MitreBadge techniqueId={f.mitreTechnique || 'T1059'} name={f.mitreTechnique || 'T1059'} />
+                    {f.mitreTechnique
+                      ? <MitreBadge techniqueId={f.mitreTechnique} name={f.mitreTechnique} />
+                      : <span className="text-xs text-slate-500">Not reported</span>}
                   </td>
-                  <td className="text-xs text-slate-600 font-mono">{f.controlArea || 'Security Operations'}</td>
-                  <td className="font-mono text-xs text-slate-700 text-center font-bold">{f.evidenceCount ?? 0}</td>
-                  <td><Confidence value={f.confidence ?? 85} compact /></td>
-                  <td><SeverityBadge severity={f.severity} /></td>
+                  <td className="text-xs text-slate-600 font-mono">{f.controlArea || 'Not reported'}</td>
+                  <td className="font-mono text-xs text-slate-700 text-center font-bold">{f.evidenceCount ?? '—'}</td>
+                  <td>{f.confidence == null ? '—' : <Confidence value={f.confidence} compact />}</td>
+                  <td>{f.severity ? <SeverityBadge severity={f.severity} /> : 'Not reported'}</td>
                   <td>
                     <span className={`badge border text-[10.5px] font-mono ${
                       f.status === 'Confirmed' 
@@ -207,7 +215,7 @@ export default function ExecutionGaps() {
                         ? 'bg-indigo-50 text-indigo-600 border-indigo-200' 
                         : 'bg-white text-slate-500 border-slate-300'
                     }`}>
-                      {f.status || 'New'}
+                      {f.status || 'Not reported'}
                     </span>
                   </td>
                   <td className="text-right">
@@ -233,15 +241,15 @@ export default function ExecutionGaps() {
                       <FindingExplanation
                         id={f.id}
                         entityId={f.entityId}
-                        finding={`${f.id} — ${f.title || f.finding}`}
+                        finding={`${f.id} — ${f.title || f.finding || 'Details not reported'}`}
                         severity={f.severity}
                         confidence={f.confidence}
-                        whyMatters={f.whyItMatters || f.description}
-                        evidence={{ cases: f.evidenceCount ?? 0, criticalAlerts: f.severity === 'Critical' ? (f.evidenceCount ?? 0) : 0, escalationRecords: 0 }}
-                        peerComparison={f.peerComparison || 'Peer comparison unavailable'}
-                        detectionLogic={f.detectionLogic || f.methodology || 'Behavioral heuristic divergence calculation'}
-                        limitations={f.limitations || 'Heuristic indicator requiring statutory examiner confirmation.'}
-                        mitre={f.mitreTechnique || 'T1059'}
+                        whyMatters={f.whyItMatters || f.description || 'Not reported'}
+                        evidence={{ cases: null, criticalAlerts: null, escalationRecords: null }}
+                        peerComparison={f.peerComparison || 'Not reported'}
+                        detectionLogic={f.detectionLogic || f.methodology || 'Not reported'}
+                        limitations={f.limitations || 'Not reported'}
+                        mitre={f.mitreTechnique}
                         status={f.status}
                         examinerNote={f.examinerNote}
                         reviewedBy={f.reviewedBy}

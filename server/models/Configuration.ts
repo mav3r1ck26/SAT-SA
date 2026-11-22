@@ -16,6 +16,7 @@ export const configurationSchema = new Schema({
 
   isEditable: { type: Boolean, default: true },
   requiresRestart: { type: Boolean, default: false },
+  version: { type: Number, default: 1, min: 1 },
 
   lastModifiedBy: { type: String },
   lastModifiedAt: { type: Date },

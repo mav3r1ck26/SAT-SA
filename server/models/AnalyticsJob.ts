@@ -41,7 +41,6 @@ export const analyticsJobSchema = new Schema({
   updatedAt: { type: Date, default: Date.now }
 }, { timestamps: true })
 
-analyticsJobSchema.index({ jobId: 1 })
 analyticsJobSchema.index({ entityId: 1, status: 1 })
 analyticsJobSchema.index({ status: 1 })
 analyticsJobSchema.index({ createdAt: -1 })

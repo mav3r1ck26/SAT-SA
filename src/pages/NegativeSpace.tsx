@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useState } from 'react'
 import { Heatmap } from '../components/charts'
 import StatCard from '../components/StatCard'
 import { TelemetryPulse } from '../components/ui'
@@ -6,45 +6,31 @@ import { AlertTriangle, Download, EyeOff, Radio, ShieldAlert, ChevronRight, Filt
 import { fetchBlindSpots, fetchEntities, fetchCoverageMatrix } from '../api/client'
 import { downloadCSV } from '../utils/export'
 import { useApp } from '../context/AppContext'
-
-const defaultColumns = ['Expected Telemetry', 'Observed Telemetry', 'Alert Gen. Stream', 'Case Evidence', 'Escalation Logs']
-const defaultCategories = ['Critical systems', 'Security devices', 'Network segments', 'Applications', 'Cloud environments', 'Identity infrastructure', 'OT/ICS environments']
-const defaultData = [
-  [100, 75, 80, 70, 65],
-  [100, 82, 85, 78, 72],
-  [100, 78, 80, 72, 68],
-  [100, 68, 70, 62, 58],
-  [100, 62, 65, 55, 48],
-  [100, 85, 88, 80, 75],
-  [100, 48, 50, 42, 35]
-]
+import { useEntityScope } from '../hooks/useEntityScope'
+import { useApiResource } from '../hooks/useApiResource'
+import RequestState from '../components/RequestState'
 
 export default function NegativeSpace() {
-  const { setSelectedEntity, setCurrentPage } = useApp()
-  const [blindSpots, setBlindSpots] = useState<any[]>([])
-  const [entities, setEntities] = useState<any[]>([])
-  const [selectedEntity, setEntityFilter] = useState('ALL')
+  const { setSelectedEntity, setCurrentPage, assessmentPeriod, entityFilter, setEntityFilter } = useApp()
+  const entityId = useEntityScope()
+  const selectedEntity = entityId || 'ALL'
+  const blindSpotsResource = useApiResource(`blind-spots:${assessmentPeriod}:${entityId || 'ALL'}`, signal =>
+    fetchBlindSpots(entityId, assessmentPeriod, signal)
+  )
+  const entitiesResource = useApiResource(`negative-entities:${assessmentPeriod}`, signal =>
+    fetchEntities({ period: assessmentPeriod }, signal)
+  )
+  const matrixResource = useApiResource(`coverage:${assessmentPeriod}:${entityId || 'ALL'}`, signal =>
+    fetchCoverageMatrix(entityId, assessmentPeriod, signal)
+  )
+  const blindSpots = blindSpotsResource.data || []
+  const entities = entitiesResource.data || []
   const [selectedSeverity, setSeverityFilter] = useState('ALL')
-  const [matrixData, setMatrixData] = useState<{ categories: string[]; columns: string[]; matrix: number[][] }>({
-    categories: defaultCategories,
-    columns: defaultColumns,
-    matrix: defaultData
-  })
-
-  useEffect(() => {
-    fetchBlindSpots().then(setBlindSpots).catch(() => setBlindSpots([]))
-    fetchEntities().then(setEntities).catch(() => setEntities([]))
-  }, [])
-
-  useEffect(() => {
-    fetchCoverageMatrix(selectedEntity)
-      .then(res => {
-        if (res && res.categories?.length && res.matrix?.length) {
-          setMatrixData(res)
-        }
-      })
-      .catch(() => {})
-  }, [selectedEntity])
+  const matrixData = matrixResource.data || {
+    categories: [],
+    columns: [],
+    matrix: []
+  }
 
   const filteredSpots = blindSpots.filter(b => {
     if (selectedEntity !== 'ALL' && (b.entityId || b.entity) !== selectedEntity) return false
@@ -52,16 +38,16 @@ export default function NegativeSpace() {
     return true
   })
 
-  const spotCount = blindSpots.length || 13
-  const lowCoverage = blindSpots.filter(b => (b.observedPct ?? 0) < 50).length || 7
-  const criticalSpots = blindSpots.filter(b => b.severity === 'Critical').length || 3
-  const entitiesAffected = new Set(blindSpots.map(b => b.entityId)).size || 6
+  const spotCount = blindSpots.length
+  const lowCoverage = blindSpots.filter(b => b.observedPct != null && b.observedPct < 50).length
+  const criticalSpots = blindSpots.filter(b => b.severity === 'Critical').length
+  const entitiesAffected = new Set(blindSpots.map(b => b.entityId)).size
 
   const handleExport = () => {
     const headers = ['Category', ...matrixData.columns]
     const rows = matrixData.categories.map((cat, i) => [
       cat,
-      ...(matrixData.matrix[i] || [0, 0, 0, 0, 0])
+      ...(matrixData.matrix[i] || [])
     ])
     downloadCSV(`SAT-SA_Negative_Space_Matrix_${selectedEntity}_${new Date().toISOString().slice(0, 10)}`, headers, rows)
   }
@@ -73,7 +59,7 @@ export default function NegativeSpace() {
       b.assetGroup || b.category,
       b.severity || 'Critical',
       b.observedPct ?? b.observed,
-      `"${(b.description || '').replace(/"/g, '""')}"`
+      b.description || ''
     ])
     downloadCSV(`SAT-SA_Blind_Spots_${selectedEntity}_${new Date().toISOString().slice(0, 10)}`, headers, rows)
   }
@@ -83,13 +69,25 @@ export default function NegativeSpace() {
     setCurrentPage('entity')
   }
 
+  const resourceError = blindSpotsResource.error || entitiesResource.error || matrixResource.error
+  const retryResource = blindSpotsResource.error ? blindSpotsResource : entitiesResource.error ? entitiesResource : matrixResource
+  if (blindSpotsResource.loading || entitiesResource.loading || matrixResource.loading || resourceError) {
+    return <RequestState
+      loading={blindSpotsResource.loading || entitiesResource.loading || matrixResource.loading}
+      error={resourceError}
+      retry={retryResource.retry}
+      retryInSeconds={retryResource.retryInSeconds}
+      loadingMessage="Loading negative-space analytics…"
+    />
+  }
+
   return (
     <div className="p-6 max-w-[1700px] mx-auto space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200 pb-4">
         <div>
           <div className="flex items-center gap-3">
             <h1 className="page-title text-xl font-bold tracking-tight text-slate-900">Negative Space & Telemetry Blind Spots</h1>
-            <TelemetryPulse active status="alert" label="SENSOR DARK SPOTS" />
+            <span className="rounded border border-slate-300 bg-slate-50 px-2 py-1 text-[10px] font-mono text-slate-600">RECORDED COVERAGE DATA</span>
           </div>
           <p className="page-subtitle text-slate-400 text-xs mt-0.5">
             Statistical detection of missing, suppressed, or disconnected telemetry pipelines in critical infrastructure
@@ -106,10 +104,10 @@ export default function NegativeSpace() {
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
-        <StatCard label="Negative Space Indicators" value={String(spotCount)} trend={2} icon="space" accent="neutral" />
-        <StatCard label="Low Coverage Areas (<50%)" value={String(lowCoverage)} trend={1} icon="gap" accent="warning" />
-        <StatCard label="Critical Sensor Gaps" value={String(criticalSpots)} trend={0} icon="alert" accent="danger" />
-        <StatCard label="Entities with Blind Spots" value={String(entitiesAffected)} trend={-1} icon="building" accent="neutral" />
+        <StatCard label="Negative Space Indicators" value={String(spotCount)} icon="space" accent="neutral" />
+        <StatCard label="Low Coverage Areas (<50%)" value={String(lowCoverage)} icon="gap" accent="warning" />
+        <StatCard label="Critical Coverage Gaps" value={String(criticalSpots)} icon="alert" accent="danger" />
+        <StatCard label="Entities with Blind Spots" value={String(entitiesAffected)} icon="building" accent="neutral" />
       </div>
 
       {/* Coverage Matrix */}
@@ -125,11 +123,11 @@ export default function NegativeSpace() {
             </div>
           </div>
           <span className="badge text-[10.5px] font-mono bg-slate-100 text-slate-600 border-slate-300">
-            10x5 SENSOR AUDIT TENSOR
+            {matrixData.categories.length} × {matrixData.columns.length} recorded dimensions
           </span>
         </div>
         <div className="p-5">
-          <Heatmap rows={matrixData.categories} columns={matrixData.columns} data={matrixData.matrix} />
+          {matrixData.categories.length ? <Heatmap rows={matrixData.categories} columns={matrixData.columns} data={matrixData.matrix} /> : <p className="p-5 text-sm text-slate-500">No telemetry coverage records are available for this entity and assessment period.</p>}
         </div>
       </div>
 
@@ -149,7 +147,7 @@ export default function NegativeSpace() {
             <div className="flex items-center gap-1.5 text-xs font-mono">
               <span className="text-slate-400">CSE:</span>
               <select
-                value={selectedEntity}
+                value={entityFilter}
                 onChange={e => setEntityFilter(e.target.value)}
                 className="select bg-slate-50 border-slate-300 text-indigo-600 text-xs py-1"
               >
@@ -180,9 +178,9 @@ export default function NegativeSpace() {
         <div className="divide-y divide-slate-800">
           {filteredSpots.length > 0 ? filteredSpots.map((bs, i) => {
             const eId = bs.entityId || bs.entity
-            const sev = bs.severity || 'Critical'
+            const sev = bs.severity || 'Unknown'
             const sevColor = sev === 'Critical' ? 'text-rose-600 border-rose-200 bg-rose-50' : 'text-amber-600 border-amber-200 bg-amber-50'
-            const obsPct = bs.observedPct ?? bs.observed ?? 0
+            const obsPct = bs.observedPct ?? bs.observed
             return (
               <div key={i} className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-slate-50 transition-colors">
                 <div className="flex items-start gap-3 min-w-0">
@@ -207,8 +205,8 @@ export default function NegativeSpace() {
                 </div>
 
                 <div className="text-right shrink-0 bg-white px-4 py-2 rounded-lg border border-slate-200 min-w-[120px]">
-                  <div className={`font-mono text-lg font-bold leading-none ${obsPct < 50 ? 'text-rose-600' : 'text-amber-600'}`}>
-                    {obsPct}%
+                  <div className={`font-mono text-lg font-bold leading-none ${obsPct != null && obsPct < 50 ? 'text-rose-600' : 'text-amber-600'}`}>
+                    {obsPct == null ? '—' : `${obsPct}%`}
                   </div>
                   <div className="text-[10px] font-mono text-slate-400 mt-1 uppercase tracking-wider">Observed Signal</div>
                 </div>
@@ -216,7 +214,7 @@ export default function NegativeSpace() {
             )
           }) : (
             <div className="p-8 text-center text-xs font-mono text-slate-400">
-              No critical sensor blind spots matching selected criteria.
+              No recorded blind-spot findings match the selected criteria.
             </div>
           )}
         </div>
